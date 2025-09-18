@@ -1,0 +1,134 @@
+# Legal Chatbot - Git Ignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment Variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Logs
+logs/
+*.log
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Data Files
+data/raw/
+data/processed/
+data/embeddings/
+*.csv
+*.json
+*.pkl
+*.pickle
+
+# Model Files
+models/
+*.model
+*.bin
+*.safetensors
+
+# Vector Database
+qdrant_data/
+chroma_data/
+faiss_index/
+
+# Docker
+.dockerignore
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# Security
+*.pem
+*.key
+secrets/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Documentation
+docs/_build/
+site/
+
+# Monitoring
+prometheus_data/
+grafana_data/
+
+# Backup files
+*.bak
+*.backup
+*.old
