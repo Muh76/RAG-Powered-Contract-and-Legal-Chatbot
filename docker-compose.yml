@@ -78,7 +78,7 @@ services:
       - api
     volumes:
       - ./frontend:/app/frontend
-    command: streamlit run frontend/streamlit/app.py --server.port 8501 --server.address 0.0.0.0
+    command: streamlit run frontend/app.py --server.port 8501 --server.address 0.0.0.0
 
   # Prometheus Monitoring
   prometheus:

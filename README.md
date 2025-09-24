@@ -35,26 +35,39 @@ This project demonstrates end-to-end AI system development with:
 
 2. **Set up environment**
    ```bash
-   make setup
+   pip install -r requirements.txt
+   export OPENAI_API_KEY="your-api-key-here"
    ```
 
 3. **Run the application**
    ```bash
-   make run
+   # Option 1: Quick start script
+   python scripts/quick_start.py
+   
+   # Option 2: Manual setup
+   uvicorn app.api.main:app --reload --port 8000 &
+   streamlit run frontend/app.py --server.port 8501
+   
+   # Option 3: Docker
+   docker-compose -f docker-compose.phase1.yml up
    ```
 
 4. **Access the UI**
    - Streamlit UI: http://localhost:8501
    - FastAPI docs: http://localhost:8000/docs
+   - API Health: http://localhost:8000/api/v1/health
 
 ## 📊 Features
 
-### Phase 1 (MVP)
-- ✅ UK legal corpus (CUAD + Legislation.gov.uk)
-- ✅ Vector-based retrieval with citations
+### Phase 1 (MVP) - ✅ **COMPLETED**
+- ✅ UK legal corpus with comprehensive legal documents
+- ✅ Vector-based retrieval with FAISS and TF-IDF embeddings
 - ✅ Safety guardrails and domain gating
 - ✅ FastAPI backend with Streamlit UI
 - ✅ Docker containerization
+- ✅ End-to-end RAG pipeline with citations
+- ✅ Dual-mode responses (Solicitor/Public)
+- ✅ Comprehensive testing and validation
 
 ### Phase 2 (Advanced RAG)
 - 🔄 Hybrid retrieval (dense + BM25)
@@ -103,9 +116,16 @@ This project demonstrates end-to-end AI system development with:
 - [Privacy Policy](docs/privacy/README.md)
 - [Evaluation Metrics](docs/eval/README.md)
 
+## 📋 Project Status
+
+- **Phase 1**: ✅ **COMPLETED** - MVP with RAG pipeline, guardrails, and web interface
+- **Phase 2**: 🔄 **IN PROGRESS** - Advanced RAG with hybrid retrieval and explainability  
+- **Phase 3**: 📋 **PLANNED** - Multilingual support and role-based responses
+- **Phase 4**: 📋 **PLANNED** - Enterprise features and monetization
+
 ## 🤝 Contributing
 
-This is a portfolio project demonstrating production-ready AI system development.
+This is a portfolio project demonstrating production-ready AI system development with a focus on legal domain applications.
 
 ## 📄 License
 
