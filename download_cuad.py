@@ -44,3 +44,5 @@ def download_cuad_dataset():
 
 if __name__ == "__main__":
     download_cuad_dataset()
+
+

@@ -6,10 +6,13 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 import uvicorn
 import os
 from contextlib import asynccontextmanager
+import logging
 
 from app.core.config import settings
 from app.api.routes import chat, health, documents
 from app.core.logging import setup_logging
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -17,8 +20,16 @@ async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
     setup_logging()
+    
+    # CRITICAL FIX: Don't initialize services at startup - this can cause segfaults
+    # Services will be initialized lazily on first request
+    # This prevents PyTorch segfaults during startup
+    logger.info("🔄 Services will be initialized on first request (lazy loading)")
+    logger.info("✅ Application startup complete")
     yield
+    
     # Shutdown
+    logger.info("Shutting down...")
     pass
 
 

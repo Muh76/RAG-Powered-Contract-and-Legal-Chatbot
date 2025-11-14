@@ -20,6 +20,42 @@ class EmbeddingConfig:
     max_length: int = 512
 
 
+def _check_pytorch_available() -> bool:
+    """Check if PyTorch can be imported without crashing
+    
+    Uses subprocess to isolate segfaults - if PyTorch crashes, only the subprocess dies.
+    """
+    import subprocess
+    import sys
+    
+    # Check environment variable first (allows manual override)
+    if os.getenv("DISABLE_PYTORCH", "").lower() in ("1", "true", "yes"):
+        logger.warning("PyTorch disabled via DISABLE_PYTORCH environment variable")
+        return False
+    
+    # Use subprocess to check PyTorch - if it segfaults, only subprocess dies
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", "import torch; torch.zeros(1)"],
+            capture_output=True,
+            timeout=5,
+            text=True
+        )
+        if result.returncode == 0:
+            return True
+        else:
+            error_output = result.stderr.lower()
+            if "libtorch" in error_output or "dlopen" in error_output:
+                logger.error("PyTorch library is broken (missing libtorch_cpu.dylib). This will cause segfaults.")
+            return False
+    except subprocess.TimeoutExpired:
+        logger.warning("PyTorch check timed out - assuming unavailable")
+        return False
+    except Exception as e:
+        logger.warning(f"PyTorch check failed: {e} - assuming unavailable")
+        return False
+
+
 class EmbeddingGenerator:
     """Generate embeddings for text chunks"""
     
@@ -30,25 +66,69 @@ class EmbeddingGenerator:
     
     def _load_model(self):
         """Load the embedding model"""
+        # CRITICAL: Check PyTorch before trying to import sentence-transformers
+        if not _check_pytorch_available():
+            error_msg = (
+                "PyTorch is broken (missing libtorch_cpu.dylib). "
+                "This will cause segfaults. "
+                "Fix with: pip uninstall torch && pip install torch"
+            )
+            logger.error(error_msg)
+            self.model = None
+            # Don't raise - just set model to None so we can continue without embeddings
+            return
+        
         try:
             from sentence_transformers import SentenceTransformer
+            # Try to create model - this might still crash if PyTorch is broken
             self.model = SentenceTransformer(self.config.model_name)
-            logger.info(f"Loaded embedding model: {self.config.model_name}")
+            # Verify model actually works by testing encode
+            try:
+                test_result = self.model.encode("test", convert_to_tensor=False)
+                if test_result is None:
+                    raise RuntimeError("Model encode returned None")
+                logger.info(f"✅ Loaded embedding model: {self.config.model_name}")
+            except Exception as test_error:
+                logger.error(f"Model loaded but encode() failed: {test_error}")
+                self.model = None
+                raise RuntimeError(f"Model encode test failed: {test_error}")
         except ImportError:
             logger.error("sentence-transformers not installed. Install with: pip install sentence-transformers")
+            self.model = None
+        except RuntimeError:
+            # Re-raise RuntimeError (from encode test)
             raise
+        except Exception as e:
+            # Catch PyTorch library loading errors (segfault causes)
+            error_msg = str(e).lower()
+            if "libtorch" in error_msg or "dlopen" in error_msg:
+                logger.error(f"❌ CRITICAL: PyTorch library loading failed: {e}")
+                logger.error("This will cause segfaults. Fix with: pip uninstall torch && pip install torch")
+            else:
+                logger.error(f"Failed to load embedding model: {e}")
+            self.model = None
+            # Don't raise - allow system to continue without embeddings
     
     def generate_embedding(self, text: str) -> List[float]:
         """Generate embedding for a single text"""
+        if self.model is None:
+            raise RuntimeError("Embedding model is None - failed to load. Check PyTorch installation.")
         try:
             embedding = self.model.encode(text, convert_to_tensor=False)
+            if embedding is None:
+                raise ValueError("model.encode() returned None")
             return embedding.tolist()
+        except RuntimeError as e:
+            # Re-raise RuntimeError (like model is None)
+            raise
         except Exception as e:
             logger.error(f"Error generating embedding: {e}")
-            raise
+            raise RuntimeError(f"Embedding generation failed: {e}. This may be a PyTorch segfault issue.")
     
     def generate_embeddings_batch(self, texts: List[str]) -> List[List[float]]:
         """Generate embeddings for a batch of texts"""
+        if self.model is None:
+            raise RuntimeError("Embedding model is None - failed to load.")
         try:
             embeddings = self.model.encode(
                 texts, 
@@ -368,5 +448,3 @@ if __name__ == "__main__":
         print(f"- {chunk['chunk_id']}: {chunk['similarity_score']:.3f}")
         print(f"  Text: {chunk['text'][:50]}...")
         print()
-
-
