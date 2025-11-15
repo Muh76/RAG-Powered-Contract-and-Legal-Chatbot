@@ -100,6 +100,41 @@ class HealthResponse(BaseModel):
     services: Dict[str, str]
 
 
+# Agentic RAG Schemas
+class ToolCall(BaseModel):
+    """Information about a tool call made by the agent"""
+    tool: str = Field(description="Name of the tool called")
+    input: Dict[str, Any] = Field(default_factory=dict, description="Input parameters for the tool")
+    result: str = Field(description="Result or summary of the tool execution")
+
+
+class AgenticChatRequest(BaseModel):
+    """Agentic chat request model"""
+    query: str = Field(..., min_length=1, max_length=1000, description="User query")
+    mode: ChatMode = ChatMode.PUBLIC
+    user_id: Optional[str] = None
+    session_id: Optional[str] = None
+    chat_history: Optional[List[Dict[str, str]]] = Field(
+        default=None,
+        description="Conversation history (list of {'role': 'user'/'assistant', 'content': '...'})"
+    )
+
+
+class AgenticChatResponse(BaseModel):
+    """Agentic chat response model"""
+    answer: str
+    tool_calls: List[ToolCall] = Field(default_factory=list, description="Tools called by the agent")
+    iterations: int = Field(description="Number of agent iterations/tool calls")
+    intermediate_steps_count: int = Field(description="Number of intermediate reasoning steps")
+    mode: str = "public"
+    safety: SafetyReport = Field(description="Safety validation result")
+    metrics: LatencyAndScores = Field(description="Performance metrics")
+    confidence_score: float = Field(ge=0.0, le=1.0)
+    legal_jurisdiction: str = "UK"
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    error: Optional[str] = None
+
+
 class ErrorResponse(BaseModel):
     """Error response model"""
     error: str
