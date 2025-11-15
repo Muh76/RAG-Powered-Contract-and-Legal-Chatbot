@@ -37,6 +37,15 @@ class Settings(BaseSettings):
     SIMILARITY_THRESHOLD: float = 0.7
     RERANK_TOP_K: int = 5
     
+    # Hybrid Search Configuration
+    HYBRID_SEARCH_BM25_WEIGHT: float = 0.4
+    HYBRID_SEARCH_SEMANTIC_WEIGHT: float = 0.6
+    HYBRID_SEARCH_FUSION_STRATEGY: str = "rrf"  # "rrf" or "weighted"
+    HYBRID_SEARCH_TOP_K_BM25: int = 20  # Retrieve more for fusion
+    HYBRID_SEARCH_TOP_K_SEMANTIC: int = 20
+    HYBRID_SEARCH_TOP_K_FINAL: int = 10
+    HYBRID_SEARCH_RRF_K: int = 60  # RRF parameter
+    
     # Security Configuration
     SECRET_KEY: str = "your-secret-key-change-in-production"
     JWT_SECRET_KEY: str = "your-jwt-secret-key-change-in-production"

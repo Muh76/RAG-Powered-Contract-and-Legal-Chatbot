@@ -1,5 +1,5 @@
 # Legal Chatbot - RAG Service
-# Extracted from Phase 1 notebook
+# Phase 2: Updated with Hybrid Search Support
 
 import os
 import sys
@@ -15,18 +15,35 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from retrieval.embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
+from retrieval.bm25_retriever import BM25Retriever
+from retrieval.semantic_retriever import SemanticRetriever
+from retrieval.hybrid_retriever import AdvancedHybridRetriever, FusionStrategy
+from retrieval.metadata_filter import MetadataFilter
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 
 class RAGService:
-    """RAG service for legal chatbot - extracted from Phase 1 notebook"""
+    """RAG service for legal chatbot with hybrid search support"""
     
-    def __init__(self):
+    def __init__(self, use_hybrid: bool = False):
+        """
+        Initialize RAG service.
+        
+        Args:
+            use_hybrid: If True, initialize hybrid retriever; if False, use basic semantic search (backward compatible)
+        """
         self.embedding_gen = None
         self.faiss_index = None
         self.chunk_metadata = []
+        
+        # Hybrid search components
+        self.use_hybrid = use_hybrid
+        self.bm25_retriever = None
+        self.semantic_retriever = None
+        self.hybrid_retriever = None
+        
         self._initialize()
     
     def _initialize(self):
@@ -40,17 +57,27 @@ class RAGService:
                 max_length=512
             )
             
-            # CRITICAL FIX: Disable embedding model entirely to prevent segfaults
-            # PyTorch is broken and causes segfaults even in subprocess checks
-            # The system will work with FAISS index that was already created
-            # Users can still search using the existing embeddings in the FAISS index
-            logger.warning("⚠️ Embedding model disabled to prevent PyTorch segfaults")
-            logger.warning("System will use existing FAISS index (created during ingestion)")
-            logger.warning("To enable embeddings, fix PyTorch: pip uninstall torch && pip install torch")
-            self.embedding_gen = None
+            # Initialize embedding generator
+            # Note: Ensure you're using the project venv (not system Python)
+            # System Python may have broken PyTorch - venv has working PyTorch 2.2.2
+            try:
+                self.embedding_gen = EmbeddingGenerator(embedding_config)
+                if self.embedding_gen.model is not None:
+                    logger.info("✅ Embedding generator initialized successfully")
+                else:
+                    logger.warning("⚠️ Embedding model is None - falling back to TF-IDF")
+                    self.embedding_gen = None
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to initialize embedding generator: {e}")
+                logger.warning("Falling back to TF-IDF search. Ensure venv is activated and PyTorch is installed.")
+                self.embedding_gen = None
             
             # Load FAISS index and metadata
             self._load_vector_store()
+            
+            # Initialize hybrid retriever if requested
+            if self.use_hybrid:
+                self._initialize_hybrid_retriever()
             
         except Exception as e:
             logger.error(f"Error initializing RAG service: {e}")
@@ -58,6 +85,42 @@ class RAGService:
             self.embedding_gen = None
             self.faiss_index = None
             self.chunk_metadata = []
+    
+    def _initialize_hybrid_retriever(self):
+        """Initialize hybrid retriever components"""
+        try:
+            if not self.chunk_metadata or len(self.chunk_metadata) == 0:
+                logger.warning("Cannot initialize hybrid retriever: no chunk metadata available")
+                return
+            
+            # Extract documents for BM25
+            documents = [chunk.get("text", "") for chunk in self.chunk_metadata]
+            
+            # Initialize BM25 retriever
+            self.bm25_retriever = BM25Retriever(documents)
+            logger.info("✅ BM25 retriever initialized")
+            
+            # Initialize semantic retriever
+            self.semantic_retriever = SemanticRetriever()
+            if not self.semantic_retriever.is_ready():
+                logger.warning("Semantic retriever not ready, hybrid search will have limited functionality")
+                return
+            
+            # Create hybrid retriever
+            self.hybrid_retriever = AdvancedHybridRetriever(
+                bm25_retriever=self.bm25_retriever,
+                semantic_retriever=self.semantic_retriever,
+                chunk_metadata=self.chunk_metadata,
+                fusion_strategy=settings.HYBRID_SEARCH_FUSION_STRATEGY,
+                bm25_weight=settings.HYBRID_SEARCH_BM25_WEIGHT,
+                semantic_weight=settings.HYBRID_SEARCH_SEMANTIC_WEIGHT,
+                rrf_k=settings.HYBRID_SEARCH_RRF_K
+            )
+            logger.info("✅ Hybrid retriever initialized")
+            
+        except Exception as e:
+            logger.error(f"Error initializing hybrid retriever: {e}", exc_info=True)
+            self.hybrid_retriever = None
     
     def _load_vector_store(self):
         """Load FAISS index and chunk metadata"""
@@ -97,8 +160,91 @@ class RAGService:
             self.faiss_index = None
             self.chunk_metadata = []
     
-    def search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
-        """Search for relevant chunks"""
+    def search(
+        self,
+        query: str,
+        top_k: int = 10,
+        use_hybrid: Optional[bool] = None,
+        fusion_strategy: Optional[str] = None,
+        metadata_filter: Optional[MetadataFilter] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Search for relevant chunks.
+        
+        Args:
+            query: Search query text
+            top_k: Number of top results to return
+            use_hybrid: If True, use hybrid search; if None, use instance default (self.use_hybrid)
+            fusion_strategy: Fusion strategy for hybrid search ("rrf" or "weighted"). Only used if use_hybrid=True
+            metadata_filter: Optional metadata filter for hybrid search
+            
+        Returns:
+            List of result dictionaries
+        """
+        # Determine if we should use hybrid search
+        use_hybrid_search = use_hybrid if use_hybrid is not None else self.use_hybrid
+        
+        # Use hybrid search if requested and available
+        if use_hybrid_search and self.hybrid_retriever:
+            return self._hybrid_search(query, top_k, fusion_strategy, metadata_filter)
+        
+        # Fall back to original semantic search (backward compatible)
+        return self._semantic_search(query, top_k)
+    
+    def _hybrid_search(
+        self,
+        query: str,
+        top_k: int = 10,
+        fusion_strategy: Optional[str] = None,
+        metadata_filter: Optional[MetadataFilter] = None
+    ) -> List[Dict[str, Any]]:
+        """Perform hybrid search using BM25 + Semantic fusion"""
+        try:
+            # Temporarily override fusion strategy if provided
+            original_strategy = self.hybrid_retriever.fusion_strategy
+            if fusion_strategy:
+                self.hybrid_retriever.fusion_strategy = fusion_strategy
+            
+            # Perform hybrid search
+            results = self.hybrid_retriever.search(
+                query=query,
+                top_k=top_k,
+                metadata_filter=metadata_filter,
+                pre_filter=True
+            )
+            
+            # Restore original strategy
+            if fusion_strategy:
+                self.hybrid_retriever.fusion_strategy = original_strategy
+            
+            # Format results to match existing API format
+            formatted_results = []
+            for result in results:
+                formatted_results.append({
+                    "chunk_id": result.get("chunk_id", ""),
+                    "text": result.get("text", ""),
+                    "metadata": result.get("metadata", {}),
+                    "similarity_score": result.get("similarity_score", 0.0),
+                    "section": result.get("section", "Unknown"),
+                    # Additional hybrid-specific fields
+                    "bm25_score": result.get("bm25_score"),
+                    "semantic_score": result.get("semantic_score"),
+                    "bm25_rank": result.get("bm25_rank"),
+                    "semantic_rank": result.get("semantic_rank"),
+                    "fusion_strategy": self.hybrid_retriever.fusion_strategy
+                })
+            
+            logger.debug(f"Hybrid search returned {len(formatted_results)} results")
+            return formatted_results
+            
+        except Exception as e:
+            logger.error(f"Hybrid search failed: {e}", exc_info=True)
+            # Fall back to semantic search
+            logger.warning("Falling back to semantic search")
+            return self._semantic_search(query, top_k)
+    
+    def _semantic_search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
+        """Original semantic search method (backward compatible)"""
         # Check if service is properly initialized
         if self.faiss_index is None or len(self.chunk_metadata) == 0:
             logger.error("Vector store not loaded. Cannot search. Run: python scripts/ingest_data.py")
@@ -252,3 +398,18 @@ class RAGService:
         except Exception as e:
             logger.error(f"TF-IDF search failed: {e}", exc_info=True)
             return []
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get statistics about the RAG service"""
+        stats = {
+            "use_hybrid": self.use_hybrid,
+            "has_embedding_gen": self.embedding_gen is not None and self.embedding_gen.model is not None,
+            "has_faiss_index": self.faiss_index is not None,
+            "num_chunks": len(self.chunk_metadata),
+            "has_hybrid_retriever": self.hybrid_retriever is not None
+        }
+        
+        if self.hybrid_retriever:
+            stats["hybrid_stats"] = self.hybrid_retriever.get_stats()
+        
+        return stats
