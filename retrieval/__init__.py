@@ -1,10 +1,14 @@
 # Legal Chatbot - Retrieval Package
+# Phase 2: Advanced RAG Retrieval Components
 
-from retrieval.semantic_retriever import SemanticRetriever
-from retrieval.bm25_retriever import BM25Retriever
-from retrieval.metadata_filter import MetadataFilter, FilterOperator
-from retrieval.hybrid_retriever import AdvancedHybridRetriever, FusionStrategy
-from retrieval.embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
+from .semantic_retriever import SemanticRetriever
+from .bm25_retriever import BM25Retriever
+from .metadata_filter import MetadataFilter, FilterOperator
+from .hybrid_retriever import AdvancedHybridRetriever, FusionStrategy
+from .embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
+from .rerankers.cross_encoder_reranker import CrossEncoderReranker
+from .explainability import ExplainabilityAnalyzer, RetrievalExplanation
+from .red_team_tester import RedTeamTester, RedTeamTestResult
 
 __all__ = [
     "SemanticRetriever",
@@ -14,5 +18,10 @@ __all__ = [
     "AdvancedHybridRetriever",
     "FusionStrategy",
     "EmbeddingGenerator",
-    "EmbeddingConfig"
+    "EmbeddingConfig",
+    "CrossEncoderReranker",
+    "ExplainabilityAnalyzer",
+    "RetrievalExplanation",
+    "RedTeamTester",
+    "RedTeamTestResult"
 ]

@@ -136,7 +136,9 @@ async def hybrid_search(request: HybridSearchRequest):
                 top_k=request.top_k,
                 use_hybrid=True,
                 fusion_strategy=request.fusion_strategy.value,
-                metadata_filter=metadata_filter
+                metadata_filter=metadata_filter,
+                include_explanation=request.include_explanation,
+                highlight_sources=request.highlight_sources
             )
         
         # Execute search asynchronously
@@ -152,20 +154,34 @@ async def hybrid_search(request: HybridSearchRequest):
         # Format results
         formatted_results = []
         for i, result in enumerate(results, 1):
+            # Convert matched_spans to list of dicts if present
+            matched_spans = result.get("matched_spans")
+            if matched_spans and isinstance(matched_spans, list) and matched_spans:
+                if isinstance(matched_spans[0], tuple):
+                    matched_spans = [{"start": span[0], "end": span[1]} for span in matched_spans]
+            
             formatted_results.append(HybridSearchResult(
                 chunk_id=result.get("chunk_id", ""),
                 text=result.get("text", ""),
                 similarity_score=result.get("similarity_score", 0.0),
                 bm25_score=result.get("bm25_score"),
                 semantic_score=result.get("semantic_score"),
+                rerank_score=result.get("rerank_score"),
                 bm25_rank=result.get("bm25_rank"),
                 semantic_rank=result.get("semantic_rank"),
+                rerank_rank=result.get("rerank_rank"),
                 rank=result.get("rank", i),
                 section=result.get("section", "Unknown"),
                 title=result.get("title"),
                 source=result.get("source"),
                 jurisdiction=result.get("jurisdiction"),
-                metadata=result.get("metadata", {})
+                metadata=result.get("metadata", {}),
+                # Explainability fields
+                explanation=result.get("explanation"),
+                confidence=result.get("confidence"),
+                matched_terms=result.get("matched_terms"),
+                highlighted_text=result.get("highlighted_text"),
+                matched_spans=matched_spans
             ))
         
         logger.info(
@@ -198,6 +214,8 @@ async def hybrid_search_get(
     query: str = Query(..., min_length=1, max_length=1000),
     top_k: int = Query(default=10, ge=1, le=50),
     fusion_strategy: str = Query(default="rrf", regex="^(rrf|weighted)$"),
+    include_explanation: bool = Query(default=False, description="Include explainability information"),
+    highlight_sources: bool = Query(default=False, description="Highlight matched terms in source text"),
     similarity_threshold: float = Query(default=0.0, ge=0.0, le=1.0),
     jurisdiction: Optional[str] = None,
     document_type: Optional[str] = None,
@@ -248,7 +266,9 @@ async def hybrid_search_get(
         top_k=top_k,
         fusion_strategy=FusionStrategy(fusion_strategy),
         similarity_threshold=similarity_threshold,
-        metadata_filters=metadata_filters
+        metadata_filters=metadata_filters,
+        include_explanation=include_explanation,
+        highlight_sources=highlight_sources
     )
     
     # Call POST endpoint logic

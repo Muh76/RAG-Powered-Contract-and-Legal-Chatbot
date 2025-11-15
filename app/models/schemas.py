@@ -131,6 +131,8 @@ class HybridSearchRequest(BaseModel):
     similarity_threshold: float = Field(default=0.0, ge=0.0, le=1.0)
     metadata_filters: List[MetadataFilterRequest] = Field(default_factory=list)
     pre_filter: bool = True
+    include_explanation: bool = False  # Add explainability information
+    highlight_sources: bool = False  # Highlight matched terms in sources
 
 
 class HybridSearchResult(BaseModel):
@@ -140,14 +142,22 @@ class HybridSearchResult(BaseModel):
     similarity_score: float  # Fused score
     bm25_score: Optional[float] = None
     semantic_score: Optional[float] = None
+    rerank_score: Optional[float] = None  # Cross-encoder reranking score
     bm25_rank: Optional[int] = None
     semantic_rank: Optional[int] = None
+    rerank_rank: Optional[int] = None  # Reranked rank
     rank: int
     section: str
     title: Optional[str] = None
     source: Optional[str] = None
     jurisdiction: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    # Explainability fields (if include_explanation=True)
+    explanation: Optional[str] = None  # Why this document was retrieved
+    confidence: Optional[float] = None  # Confidence score (0-1)
+    matched_terms: Optional[List[str]] = None  # Matched query terms
+    highlighted_text: Optional[str] = None  # Text with highlighted matches (if highlight_sources=True)
+    matched_spans: Optional[List[Dict[str, int]]] = None  # [(start, end), ...] for matches
 
 
 class HybridSearchResponse(BaseModel):

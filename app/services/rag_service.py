@@ -19,6 +19,8 @@ from retrieval.bm25_retriever import BM25Retriever
 from retrieval.semantic_retriever import SemanticRetriever
 from retrieval.hybrid_retriever import AdvancedHybridRetriever, FusionStrategy
 from retrieval.metadata_filter import MetadataFilter
+from retrieval.rerankers.cross_encoder_reranker import CrossEncoderReranker
+from retrieval.explainability import ExplainabilityAnalyzer
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -43,6 +45,9 @@ class RAGService:
         self.bm25_retriever = None
         self.semantic_retriever = None
         self.hybrid_retriever = None
+        
+        # Explainability component
+        self.explainability_analyzer = ExplainabilityAnalyzer()
         
         self._initialize()
     
@@ -106,6 +111,23 @@ class RAGService:
                 logger.warning("Semantic retriever not ready, hybrid search will have limited functionality")
                 return
             
+            # Initialize reranker if enabled
+            reranker = None
+            if settings.ENABLE_RERANKING:
+                try:
+                    reranker = CrossEncoderReranker(
+                        model_name=settings.RERANKER_MODEL,
+                        batch_size=settings.RERANKER_BATCH_SIZE
+                    )
+                    if reranker.is_ready():
+                        logger.info("✅ Cross-encoder reranker initialized")
+                    else:
+                        logger.warning("⚠️ Cross-encoder reranker not available")
+                        reranker = None
+                except Exception as e:
+                    logger.warning(f"Failed to initialize reranker: {e}")
+                    reranker = None
+            
             # Create hybrid retriever
             self.hybrid_retriever = AdvancedHybridRetriever(
                 bm25_retriever=self.bm25_retriever,
@@ -114,7 +136,9 @@ class RAGService:
                 fusion_strategy=settings.HYBRID_SEARCH_FUSION_STRATEGY,
                 bm25_weight=settings.HYBRID_SEARCH_BM25_WEIGHT,
                 semantic_weight=settings.HYBRID_SEARCH_SEMANTIC_WEIGHT,
-                rrf_k=settings.HYBRID_SEARCH_RRF_K
+                rrf_k=settings.HYBRID_SEARCH_RRF_K,
+                reranker=reranker,
+                enable_reranking=settings.ENABLE_RERANKING and reranker is not None
             )
             logger.info("✅ Hybrid retriever initialized")
             
@@ -166,7 +190,9 @@ class RAGService:
         top_k: int = 10,
         use_hybrid: Optional[bool] = None,
         fusion_strategy: Optional[str] = None,
-        metadata_filter: Optional[MetadataFilter] = None
+        metadata_filter: Optional[MetadataFilter] = None,
+        include_explanation: bool = False,
+        highlight_sources: bool = False
     ) -> List[Dict[str, Any]]:
         """
         Search for relevant chunks.
@@ -186,10 +212,16 @@ class RAGService:
         
         # Use hybrid search if requested and available
         if use_hybrid_search and self.hybrid_retriever:
-            return self._hybrid_search(query, top_k, fusion_strategy, metadata_filter)
+            results = self._hybrid_search(query, top_k, fusion_strategy, metadata_filter)
+        else:
+            # Fall back to original semantic search (backward compatible)
+            results = self._semantic_search(query, top_k)
         
-        # Fall back to original semantic search (backward compatible)
-        return self._semantic_search(query, top_k)
+        # Add explainability if requested
+        if include_explanation or highlight_sources:
+            results = self._add_explainability(results, query, include_explanation, highlight_sources)
+        
+        return results
     
     def _hybrid_search(
         self,
@@ -220,7 +252,7 @@ class RAGService:
             # Format results to match existing API format
             formatted_results = []
             for result in results:
-                formatted_results.append({
+                formatted_result = {
                     "chunk_id": result.get("chunk_id", ""),
                     "text": result.get("text", ""),
                     "metadata": result.get("metadata", {}),
@@ -231,17 +263,56 @@ class RAGService:
                     "semantic_score": result.get("semantic_score"),
                     "bm25_rank": result.get("bm25_rank"),
                     "semantic_rank": result.get("semantic_rank"),
-                    "fusion_strategy": self.hybrid_retriever.fusion_strategy
-                })
+                    "fusion_strategy": self.hybrid_retriever.fusion_strategy,
+                    # Reranking fields (if available)
+                    "rerank_score": result.get("rerank_score"),
+                    "rerank_rank": result.get("rerank_rank")
+                }
+                formatted_results.append(formatted_result)
             
             logger.debug(f"Hybrid search returned {len(formatted_results)} results")
             return formatted_results
             
         except Exception as e:
-            logger.error(f"Hybrid search failed: {e}", exc_info=True)
-            # Fall back to semantic search
-            logger.warning("Falling back to semantic search")
-            return self._semantic_search(query, top_k)
+                logger.error(f"Hybrid search failed: {e}", exc_info=True)
+                # Fall back to semantic search
+                logger.warning("Falling back to semantic search")
+                return self._semantic_search(query, top_k)
+    
+    def _add_explainability(
+        self,
+        results: List[Dict[str, Any]],
+        query: str,
+        include_explanation: bool = True,
+        highlight_sources: bool = True
+    ) -> List[Dict[str, Any]]:
+        """
+        Add explainability information and highlighting to results.
+        
+        Args:
+            results: List of retrieval results
+            query: Search query
+            include_explanation: If True, add explanation fields
+            highlight_sources: If True, add highlighted text
+            
+        Returns:
+            List of results with explainability fields added
+        """
+        if highlight_sources:
+            # Add highlighted text
+            results = self.explainability_analyzer.highlight_sources(results, query, highlight_tag="**")
+        
+        if include_explanation:
+            # Add explanations
+            explanations = self.explainability_analyzer.explain_results(results, query)
+            
+            for result, explanation in zip(results, explanations):
+                result["explanation"] = explanation.explanation
+                result["confidence"] = explanation.confidence
+                result["matched_terms"] = explanation.matched_terms
+                result["matched_spans"] = explanation.matched_text_spans
+        
+        return results
     
     def _semantic_search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
         """Original semantic search method (backward compatible)"""

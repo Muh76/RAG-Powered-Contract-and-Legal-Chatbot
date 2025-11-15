@@ -11,6 +11,7 @@ import logging
 from retrieval.bm25_retriever import BM25Retriever
 from retrieval.semantic_retriever import SemanticRetriever
 from retrieval.metadata_filter import MetadataFilter, FilterOperator
+from retrieval.rerankers.cross_encoder_reranker import CrossEncoderReranker
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,9 @@ class AdvancedHybridRetriever:
         bm25_weight: float = None,
         semantic_weight: float = None,
         fusion_strategy: str = None,
-        rrf_k: int = None
+        rrf_k: int = None,
+        reranker: Optional[CrossEncoderReranker] = None,
+        enable_reranking: bool = False
     ):
         """
         Initialize advanced hybrid retriever.
@@ -71,6 +74,22 @@ class AdvancedHybridRetriever:
         self.fusion_strategy = fusion_strategy or settings.HYBRID_SEARCH_FUSION_STRATEGY
         self.rrf_k = rrf_k or settings.HYBRID_SEARCH_RRF_K
         
+        # Reranking configuration
+        self.enable_reranking = enable_reranking
+        self.reranker = reranker
+        if enable_reranking and reranker is None:
+            # Auto-initialize reranker if enabled but not provided
+            try:
+                self.reranker = CrossEncoderReranker()
+                if self.reranker.is_ready():
+                    logger.info("✅ Cross-encoder reranker initialized")
+                else:
+                    logger.warning("⚠️ Cross-encoder reranker not available, reranking disabled")
+                    self.enable_reranking = False
+            except Exception as e:
+                logger.warning(f"Failed to initialize reranker: {e}. Reranking disabled.")
+                self.enable_reranking = False
+        
         # Validate weights sum to 1.0 (for weighted fusion)
         if self.fusion_strategy in [FusionStrategy.WEIGHTED, FusionStrategy.INTERPOLATION]:
             total_weight = self.bm25_weight + self.semantic_weight
@@ -83,7 +102,8 @@ class AdvancedHybridRetriever:
             f"AdvancedHybridRetriever initialized: "
             f"fusion={self.fusion_strategy}, "
             f"bm25_weight={self.bm25_weight:.2f}, "
-            f"semantic_weight={self.semantic_weight:.2f}"
+            f"semantic_weight={self.semantic_weight:.2f}, "
+            f"reranking={'enabled' if self.enable_reranking and self.reranker and self.reranker.is_ready() else 'disabled'}"
         )
     
     @classmethod
@@ -352,9 +372,38 @@ class AdvancedHybridRetriever:
         if not pre_filter and metadata_filter and not metadata_filter.is_empty():
             fused_results = metadata_filter.filter_chunks(fused_results)
         
-        # Step 7: Sort by fused score and return top_k
+        # Step 7: Sort by fused score
         fused_results.sort(key=lambda x: x["similarity_score"], reverse=True)
-        final_results = fused_results[:top_k]
+        
+        # Step 8: Rerank if enabled (rerank top candidates for better accuracy)
+        if self.enable_reranking and self.reranker and self.reranker.is_ready():
+            try:
+                # Rerank top results (retrieve more initially, then rerank and return top_k)
+                rerank_top_k = min(top_k * 2, len(fused_results))  # Rerank 2x top_k for better quality
+                candidates_for_rerank = fused_results[:rerank_top_k]
+                
+                # Rerank using cross-encoder
+                reranked_results = self.reranker.rerank_results(
+                    query=query,
+                    retrieval_results=candidates_for_rerank,
+                    top_k=top_k,
+                    preserve_metadata=True
+                )
+                
+                # Combine reranked top results with remaining results
+                reranked_chunk_ids = {r.get("chunk_id") for r in reranked_results}
+                remaining_results = [r for r in fused_results[rerank_top_k:] if r.get("chunk_id") not in reranked_chunk_ids]
+                
+                final_results = reranked_results + remaining_results
+                final_results = final_results[:top_k]  # Ensure we only return top_k
+                
+                logger.debug(f"Reranked {rerank_top_k} candidates, returned {len(final_results)} results")
+            except Exception as e:
+                logger.warning(f"Reranking failed: {e}, using fused results without reranking")
+                final_results = fused_results[:top_k]
+        else:
+            # No reranking, just return top_k
+            final_results = fused_results[:top_k]
         
         # Add final rank
         for rank, result in enumerate(final_results, 1):
@@ -365,7 +414,8 @@ class AdvancedHybridRetriever:
             f"bm25_results={len(bm25_results)}, "
             f"semantic_results={len(semantic_results)}, "
             f"fused_results={len(fused_results)}, "
-            f"final_results={len(final_results)}"
+            f"final_results={len(final_results)}, "
+            f"reranking={'enabled' if self.enable_reranking and self.reranker and self.reranker.is_ready() else 'disabled'}"
         )
         
         return final_results
@@ -457,12 +507,18 @@ class AdvancedHybridRetriever:
         Returns:
             Dictionary with statistics
         """
-        return {
+        stats = {
             "fusion_strategy": self.fusion_strategy,
             "bm25_weight": self.bm25_weight,
             "semantic_weight": self.semantic_weight,
             "rrf_k": self.rrf_k if self.fusion_strategy == FusionStrategy.RRF else None,
+            "reranking_enabled": self.enable_reranking and self.reranker and self.reranker.is_ready(),
             "bm25_stats": self.bm25_retriever.get_index_stats(),
             "semantic_stats": self.semantic_retriever.get_index_stats(),
             "num_chunks": len(self.chunk_metadata) if self.chunk_metadata else None
         }
+        
+        if self.reranker and self.reranker.is_ready():
+            stats["reranker_stats"] = self.reranker.get_stats()
+        
+        return stats
