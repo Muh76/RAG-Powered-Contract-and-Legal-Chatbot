@@ -53,8 +53,11 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip setuptools wheel
-        # Install Cython <3.0.0 to fix PyYAML 5.4.1 build issues (PyYAML <6 is incompatible with Cython 3.0+)
-        pip install "Cython<3.0.0" || echo "Cython installation had issues, continuing..."
+        # Install Cython <3.0.0 first (PyYAML <6 is incompatible with Cython 3.0+)
+        pip install "Cython<3.0.0" || exit 1
+        # Install PyYAML with --no-build-isolation so it uses the Cython we installed
+        pip install "PyYAML>=5.1,<6" --no-build-isolation || exit 1
+        # Now install the rest of requirements (PyYAML already installed, so pip will skip it)
         pip install -r requirements.txt || exit 1
         if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt || exit 1; fi
     
@@ -117,8 +120,11 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip setuptools wheel
-        # Install Cython <3.0.0 to fix PyYAML 5.4.1 build issues (PyYAML <6 is incompatible with Cython 3.0+)
-        pip install "Cython<3.0.0" || echo "Cython installation had issues, continuing..."
+        # Install Cython <3.0.0 first (PyYAML <6 is incompatible with Cython 3.0+)
+        pip install "Cython<3.0.0" || exit 1
+        # Install PyYAML with --no-build-isolation so it uses the Cython we installed
+        pip install "PyYAML>=5.1,<6" --no-build-isolation || exit 1
+        # Now install the rest of requirements (PyYAML already installed, so pip will skip it)
         pip install -r requirements.txt || exit 1
         if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt || exit 1; fi
     
@@ -231,8 +237,11 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip setuptools wheel
-        # Install Cython <3.0.0 to fix PyYAML 5.4.1 build issues (PyYAML <6 is incompatible with Cython 3.0+)
-        pip install "Cython<3.0.0" || echo "Cython installation had issues, continuing..."
+        # Install Cython <3.0.0 first (PyYAML <6 is incompatible with Cython 3.0+)
+        pip install "Cython<3.0.0" || exit 1
+        # Install PyYAML with --no-build-isolation so it uses the Cython we installed
+        pip install "PyYAML>=5.1,<6" --no-build-isolation || exit 1
+        # Now install the rest of requirements (PyYAML already installed, so pip will skip it)
         pip install -r requirements.txt || exit 1
         if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt || exit 1; fi
     
