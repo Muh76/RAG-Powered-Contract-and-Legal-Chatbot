@@ -59,7 +59,8 @@ jobs:
         pip install "PyYAML>=5.1,<6" --no-build-isolation || exit 1
         # Now install the rest of requirements (PyYAML already installed, so pip will skip it)
         pip install -r requirements.txt || exit 1
-        if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt || exit 1; fi
+        # Skip requirements-dev.txt (optional dev dependencies with conflicts - postman/insomnia don't exist)
+        # if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt || exit 1; fi
     
     - name: Run linting
       run: |
@@ -126,7 +127,8 @@ jobs:
         pip install "PyYAML>=5.1,<6" --no-build-isolation || exit 1
         # Now install the rest of requirements (PyYAML already installed, so pip will skip it)
         pip install -r requirements.txt || exit 1
-        if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt || exit 1; fi
+        # Skip requirements-dev.txt (optional dev dependencies with conflicts - postman/insomnia don't exist)
+        # if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt || exit 1; fi
     
     - name: Run tests
       env:
@@ -246,7 +248,8 @@ jobs:
         pip install "PyYAML>=5.1,<6" --no-build-isolation || exit 1
         # Now install the rest of requirements (PyYAML already installed, so pip will skip it)
         pip install -r requirements.txt || exit 1
-        if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt || exit 1; fi
+        # Skip requirements-dev.txt (optional dev dependencies with conflicts - postman/insomnia don't exist)
+        # if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt || exit 1; fi
     
     - name: Run integration tests
       env:
