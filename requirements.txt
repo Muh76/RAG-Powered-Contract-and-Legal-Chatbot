@@ -3,7 +3,7 @@
 ## Core Dependencies
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
-pydantic==2.5.0
+pydantic>=2.7.4,<3.0.0  # langchain>=1.0.0 requires pydantic>=2.7.4
 pydantic-settings==2.1.0
 
 ## ML/AI Dependencies
