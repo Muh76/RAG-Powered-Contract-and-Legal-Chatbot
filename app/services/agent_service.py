@@ -293,6 +293,10 @@ If the user's query is complex, break it down and use multiple tools to gather a
                 answer = result.get("output", "I couldn't generate a response. Please try again.")
                 intermediate_steps = result.get("intermediate_steps", [])
             
+            # Track overall agent execution time before tool extraction
+            import time
+            agent_start_time = time.time()
+            
             # Extract tool call information
             tool_calls = []
             for step in intermediate_steps:
@@ -308,6 +312,33 @@ If the user's query is complex, break it down and use multiple tools to gather a
                         "input": tool_input,
                         "result": str(tool_result)[:500]  # Limit result length
                     })
+            
+            # Track tool usage metrics
+            if tool_calls:
+                from app.core.metrics import metrics_collector
+                agent_time_ms = (time.time() - agent_start_time) * 1000
+                # Estimate time per tool (approximate - actual timing is tracked at tool level)
+                estimated_time_per_tool = agent_time_ms / len(tool_calls) if len(tool_calls) > 0 else 0
+                
+                for tool_call in tool_calls:
+                    tool_name = tool_call.get("tool", "unknown")
+                    # Track tool usage (success=True since we got results)
+                    metrics_collector.record_tool_usage(
+                        tool_name=tool_name,
+                        execution_time_ms=estimated_time_per_tool,
+                        success=True,
+                    )
+                
+                logger.info(
+                    f"Agent used {len(tool_calls)} tool(s)",
+                    extra={
+                        "tool_count": len(tool_calls),
+                        "tool_names": [tc.get("tool") for tc in tool_calls],
+                        "iterations": len(intermediate_steps),
+                        "estimated_time_ms": round(estimated_time_per_tool, 2),
+                        "type": "agent_tool_usage",
+                    },
+                )
             
             return {
                 "answer": answer,

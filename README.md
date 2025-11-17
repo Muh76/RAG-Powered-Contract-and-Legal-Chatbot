@@ -8,7 +8,9 @@ This project demonstrates end-to-end AI system development with:
 - **Phase 1**: ✅ MVP chatbot with UK legal corpus (CUAD + Legislation.gov.uk) - **COMPLETE**
 - **Phase 2**: ✅ Advanced RAG with hybrid retrieval, reranking, and explainability - **COMPLETE**
 - **Phase 3**: ✅ Agentic RAG with LangChain agents and tool calling - **COMPLETE**
-- **Phase 4**: 📋 Multilingual support and enterprise features
+- **Phase 4.1**: ✅ Comprehensive testing and validation - **COMPLETE**
+- **Phase 4.2**: ✅ Monitoring and observability - **COMPLETE**
+- **Phase 5**: 📋 Enterprise features and deployment
 
 ### 📊 Phase 2 Status (Advanced RAG) - ✅ **COMPLETE**
 - ✅ **Dataset Preparation**: 1,411 chunks (1,389 CUAD + 22 UK statutes)
@@ -69,6 +71,9 @@ This project demonstrates end-to-end AI system development with:
    - FastAPI docs: http://localhost:8000/docs (Swagger UI)
    - ReDoc: http://localhost:8000/redoc
    - API Health: http://localhost:8000/api/v1/health
+   - Detailed Health: http://localhost:8000/api/v1/health/detailed
+   - Metrics Summary: http://localhost:8000/api/v1/metrics/summary
+   - System Metrics: http://localhost:8000/api/v1/metrics/system
    - Hybrid Search API: http://localhost:8000/api/v1/search/hybrid
    - Agentic Chat API: http://localhost:8000/api/v1/agentic-chat
 
@@ -154,15 +159,50 @@ This project demonstrates end-to-end AI system development with:
   - Better reasoning through iterative refinement
   - Extensible architecture for adding new tools
 
-### Phase 4 (Localization)
-- 🔄 Multilingual support (English + Farsi)
-- 🔄 Document upload and private corpora
-- 🔄 Privacy compliance (GDPR/UK GDPR)
+### Phase 4.1 (Comprehensive Testing) - ✅ **COMPLETED**
+- ✅ End-to-end test suite (all API endpoints)
+- ✅ Integration testing (service-to-service communication)
+- ✅ Regression testing (backward compatibility)
+- ✅ Performance benchmarking
+- ✅ Error handling enhancement
+- ✅ Load testing framework
 
-### Phase 4 (Enterprise)
+### Phase 4.2 (Monitoring and Observability) - ✅ **COMPLETED**
+- ✅ **Application Logging**
+  - Structured JSON logging (configurable)
+  - Log levels (DEBUG, INFO, WARNING, ERROR)
+  - Request/response logging with unique IDs
+  - Error tracking with full exception details
+  - Thread-safe logging with rotation
+  
+- ✅ **Health Checks**
+  - Service health endpoints (`/api/v1/health`)
+  - Detailed health check with dependencies (`/api/v1/health/detailed`)
+  - Kubernetes liveness probe (`/api/v1/health/live`)
+  - Kubernetes readiness probe (`/api/v1/health/ready`)
+  - Dependency health monitoring (database, redis, vector store, LLM API)
+  - System metrics (CPU, memory, disk)
+  
+- ✅ **Metrics and Alerts**
+  - API response times tracking (min, max, avg)
+  - Error rates per endpoint
+  - Request volumes tracking
+  - Tool usage statistics for agentic chat
+  - System metrics collection (CPU, memory, disk)
+  - Summary metrics endpoint
+  
+- ✅ **Monitoring API Endpoints**
+  - `GET /api/v1/metrics` - All metrics
+  - `GET /api/v1/metrics/summary` - Summary metrics
+  - `GET /api/v1/metrics/endpoints` - Endpoint-specific metrics
+  - `GET /api/v1/metrics/tools` - Tool usage statistics
+  - `GET /api/v1/metrics/system` - System metrics
+
+### Phase 5 (Enterprise Features) - 📋 **PLANNED**
 - 🔄 OAuth2 authentication and RBAC
 - 🔄 Multi-tenant architecture
-- 🔄 Audit logging and compliance
+- 🔄 Document upload and private corpora
+- 🔄 Multilingual support (English + Farsi)
 - 🔄 Billing and monetization hooks
 
 ## 🛠️ Tech Stack
@@ -185,7 +225,13 @@ This project demonstrates end-to-end AI system development with:
   - Cross-encoder reranking
 - **Vector DB**: FAISS (in-memory), Qdrant/pgvector (optional)
 - **Infrastructure**: Docker, Docker Compose
-- **Monitoring**: Prometheus, Grafana, OpenTelemetry
+- **Monitoring**: 
+  - Structured JSON logging (Loguru)
+  - Health checks with dependency monitoring
+  - Metrics collection (API response times, error rates, request volumes)
+  - System metrics (CPU, memory, disk via psutil)
+  - Tool usage statistics (agentic chat)
+  - Prometheus, Grafana, OpenTelemetry (planned integration)
 - **Testing**: pytest, automated red-team testing
 
 ## 📈 Business Value
@@ -229,6 +275,10 @@ This project demonstrates end-to-end AI system development with:
 - [API Documentation](docs/api_hybrid_search_endpoint.md)
 - [Phase 2 Completion Summary](docs/phase2_completion_summary.md)
 - [Phase 3 Agentic RAG Summary](docs/phase3_agentic_rag_summary.md)
+- [Phase 4.1 Testing Summary](docs/phase4_1_testing_summary.md)
+- [Phase 4.2 Monitoring Summary](docs/phase4_2_monitoring_summary.md)
+- [Monitoring Verification Guide](docs/verify_monitoring.md)
+- [Monitoring API Usage Guide](MONITORING_API_USAGE.md)
 
 ## 🔍 Phase 2 Features in Detail
 
@@ -452,12 +502,54 @@ curl -X POST http://localhost:8000/api/v1/agentic-chat \
 curl http://localhost:8000/api/v1/agentic-chat/stats
 ```
 
+**Phase 4.1 Tests (Comprehensive Testing):**
+```bash
+# Run all E2E tests
+pytest tests/e2e/ -v
+
+# Run integration tests
+pytest tests/integration/ -v
+
+# Run performance benchmarks
+python scripts/test_performance_benchmark.py
+
+# Run all tests
+python scripts/run_all_tests.py
+```
+
+**Phase 4.2 Tests (Monitoring):**
+```bash
+# Run monitoring unit tests
+pytest tests/unit/test_monitoring.py -v
+
+# Verify monitoring (requires server running)
+export PYTHONPATH="${PYTHONPATH}:$(pwd)"
+python scripts/verify_monitoring.py --url http://localhost:8000
+
+# E2E monitoring verification
+bash scripts/test_monitoring_e2e.sh
+
+# Test health endpoints
+curl http://localhost:8000/api/v1/health
+curl http://localhost:8000/api/v1/health/detailed
+curl http://localhost:8000/api/v1/health/live
+curl http://localhost:8000/api/v1/health/ready
+
+# Test metrics endpoints
+curl http://localhost:8000/api/v1/metrics/summary
+curl http://localhost:8000/api/v1/metrics/system
+curl http://localhost:8000/api/v1/metrics/endpoints
+curl http://localhost:8000/api/v1/metrics/tools
+```
+
 ## 📋 Project Status
 
 - **Phase 1**: ✅ **COMPLETED** - MVP with RAG pipeline, guardrails, and web interface
 - **Phase 2**: ✅ **COMPLETED** - Advanced RAG with hybrid retrieval, reranking, explainability, and red-team testing  
 - **Phase 3**: ✅ **COMPLETED** - Agentic RAG with LangChain agents, tool calling, and multi-step reasoning
-- **Phase 4**: 📋 **PLANNED** - Multilingual support and enterprise features
+- **Phase 4.1**: ✅ **COMPLETED** - Comprehensive testing and validation (end-to-end, integration, regression, performance)
+- **Phase 4.2**: ✅ **COMPLETED** - Monitoring and observability (structured logging, health checks, metrics collection)
+- **Phase 5**: 📋 **PLANNED** - Enterprise features and deployment
 
 ### Phase 2 Completion Summary
 
@@ -517,6 +609,92 @@ curl http://localhost:8000/api/v1/agentic-chat/stats
 - ✅ Test scripts for agentic chat (`scripts/test_agentic_chat.py`)
 - ✅ Phase 3 implementation summary (`docs/phase3_agentic_rag_summary.md`)
 
+### Phase 4.1 Completion Summary (Comprehensive Testing)
+
+**Core Features:**
+- ✅ End-to-end test suite for all API endpoints
+- ✅ Integration testing for service-to-service communication
+- ✅ Regression testing for backward compatibility
+- ✅ Performance benchmarking with targets
+- ✅ Error handling enhancement
+- ✅ Load testing framework
+
+**Test Coverage:**
+- ✅ E2E tests: 108+ test cases
+- ✅ Integration tests: 15+ test cases
+- ✅ Regression tests: 20+ test cases
+- ✅ Performance benchmarks: Response time tracking
+- ✅ Error scenario tests: Network failures, invalid inputs, timeouts
+
+**Integration:**
+- ✅ Test runner scripts (`scripts/run_all_tests.py`)
+- ✅ Server management for tests (`scripts/run_tests_with_server.py`)
+- ✅ Performance benchmark script (`scripts/test_performance_benchmark.py`)
+- ✅ Comprehensive test documentation
+
+**Documentation:**
+- ✅ Phase 4.1 testing summary (`docs/phase4_1_testing_summary.md`)
+- ✅ Test documentation (`tests/README.md`)
+- ✅ Test execution reports
+
+### Phase 4.2 Completion Summary (Monitoring and Observability)
+
+**Core Features:**
+- ✅ Structured JSON logging (configurable)
+- ✅ Request/response logging with unique IDs
+- ✅ Error tracking with full exception details
+- ✅ Health checks with dependency monitoring (4 endpoints)
+- ✅ System metrics (CPU, memory, disk)
+- ✅ API metrics (response times, error rates, request volumes)
+- ✅ Tool usage statistics for agentic chat (5 endpoints)
+
+**Health Checks:**
+- ✅ Basic health check (`GET /api/v1/health`)
+- ✅ Detailed health check with dependencies (`GET /api/v1/health/detailed`)
+- ✅ Kubernetes liveness probe (`GET /api/v1/health/live`)
+- ✅ Kubernetes readiness probe (`GET /api/v1/health/ready`)
+- ✅ Dependency monitoring (database, redis, vector store, LLM API)
+- ✅ Parallel dependency checking with caching
+
+**Metrics Collection:**
+- ✅ API request tracking (automatic via middleware)
+- ✅ Response time statistics (min, max, avg per endpoint)
+- ✅ Error rate calculation per endpoint
+- ✅ Request volume tracking
+- ✅ Tool usage statistics (execution time, success/failure rates)
+- ✅ System metrics (CPU percentage, memory usage, disk usage)
+
+**Logging:**
+- ✅ Structured JSON format (configurable)
+- ✅ Log levels (DEBUG, INFO, WARNING, ERROR)
+- ✅ Request/response logging with unique request IDs
+- ✅ Error tracking with full exception details
+- ✅ Thread-safe logging with rotation (10 MB, 7 days retention)
+- ✅ Custom headers (X-Request-ID, X-Process-Time)
+
+**Integration:**
+- ✅ Monitoring middleware integrated (`app/core/middleware.py`)
+- ✅ Metrics collector (`app/core/metrics.py`)
+- ✅ Health checker (`app/core/health_checker.py`)
+- ✅ Enhanced logging (`app/core/logging.py`)
+- ✅ Metrics API endpoints (`app/api/routes/metrics.py`)
+- ✅ Enhanced health endpoints (`app/api/routes/health.py`)
+
+**Documentation:**
+- ✅ Phase 4.2 monitoring summary (`docs/phase4_2_monitoring_summary.md`)
+- ✅ Monitoring verification guide (`docs/verify_monitoring.md`)
+- ✅ Monitoring API usage guide (`MONITORING_API_USAGE.md`)
+- ✅ Verification checklist (`docs/MONITORING_VERIFICATION_CHECKLIST.md`)
+- ✅ E2E verification results (`MONITORING_E2E_VERIFICATION_RESULTS.md`)
+
+**Verification:**
+- ✅ Unit tests: 20/20 passed
+- ✅ All 9 API endpoints working
+- ✅ Metrics collection verified (42+ requests tracked)
+- ✅ System metrics verified (CPU, memory, disk)
+- ✅ Request/response logging verified
+- ✅ Custom headers verified
+
 ## 🤝 Contributing
 
 This is a portfolio project demonstrating production-ready AI system development with a focus on legal domain applications.
@@ -566,6 +744,15 @@ Explore the implementation details in the development notebooks:
 4. **Multi-Step Reasoning**: Iterative refinement until sufficient information
 5. **Autonomous Tool Selection**: Agent decides which tools to use based on query analysis
 6. **Conversation History**: Context-aware responses across multiple turns
+
+**Phase 4.2 Concepts:**
+1. **Structured Logging**: JSON format logs for machine readability and log aggregation
+2. **Request Tracking**: Unique request IDs for tracing requests through the system
+3. **Health Checks**: Dependency monitoring for database, cache, vector store, and LLM API
+4. **Metrics Collection**: Automatic tracking of API response times, error rates, and request volumes
+5. **System Metrics**: Real-time monitoring of CPU, memory, and disk usage
+6. **Tool Usage Statistics**: Tracking tool execution times and success/failure rates in agentic chat
+7. **Observability**: Comprehensive visibility into system behavior for debugging and optimization
 
 ---
 

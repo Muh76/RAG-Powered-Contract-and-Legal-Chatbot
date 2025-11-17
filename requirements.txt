@@ -81,6 +81,7 @@ click==8.1.7
 rich==13.7.0
 tqdm==4.66.1
 loguru==0.7.2
+psutil==5.9.6  # System metrics (CPU, memory, disk)
 
 ## Infrastructure
 docker==6.1.3
