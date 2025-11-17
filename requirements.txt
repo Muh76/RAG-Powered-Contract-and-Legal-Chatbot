@@ -82,6 +82,7 @@ rich==13.7.0
 tqdm==4.66.1
 loguru==0.7.2
 psutil==5.9.6  # System metrics (CPU, memory, disk)
+pyyaml>=6.0.0  # Explicitly specify PyYAML to fix build issues with Cython
 
 ## Infrastructure
 docker==6.1.3
