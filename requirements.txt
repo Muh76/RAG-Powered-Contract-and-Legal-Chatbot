@@ -37,7 +37,7 @@ requests==2.31.0
 aiofiles==23.2.1
 
 ## Frontend
-streamlit==1.28.1
+streamlit>=1.30.0  # Required by trulens-eval>=0.22.1
 streamlit-chat==0.1.1
 plotly==5.17.0
 
