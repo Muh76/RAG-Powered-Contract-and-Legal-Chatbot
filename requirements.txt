@@ -82,7 +82,8 @@ rich==13.7.0
 tqdm==4.66.1
 loguru==0.7.2
 psutil==5.9.6  # System metrics (CPU, memory, disk)
-pyyaml>=6.0.0  # Explicitly specify PyYAML to fix build issues with Cython
+# Note: PyYAML version is auto-resolved by pip to satisfy all dependencies
+# docker-compose requires PyYAML<6, so Cython installation handles build issues
 
 ## Infrastructure
 docker==6.1.3
