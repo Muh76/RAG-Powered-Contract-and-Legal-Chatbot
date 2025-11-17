@@ -13,7 +13,8 @@ on:
       - '.gitignore'
       - 'LICENSE'
       - 'README.md'
-      - '*.txt'
+      # Note: requirements.txt is NOT ignored - it should trigger CI/CD
+      # '*.txt'  # Removed - requirements.txt should trigger workflows
       - '*.json'
       - 'notebooks/**'
   pull_request:
