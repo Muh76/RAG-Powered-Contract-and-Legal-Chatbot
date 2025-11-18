@@ -216,20 +216,17 @@ try:
     (h) any terms and conditions relating to incapacity for work due to sickness or injury.
     """
     
-    # Create document
-    document_data = DocumentCreate(
-        title="Employment Rights Act 1996",
-        description="Test document for employment law",
-        jurisdiction="UK",
-        tags="employment,law,test"
-    )
-    
+    # Create document with metadata
     document = doc_service.create_document(
         db=db,
         user_id=user_id,
         filename="employment_rights_act.txt",
         content=test_content,
-        document_data=document_data
+        document_data=None,  # Optional - can pass metadata via parameters
+        title="Employment Rights Act 1996",
+        description="Test document for employment law",
+        jurisdiction="UK",
+        tags="employment,law,test"
     )
     
     print(f"   ✅ Document created: ID={document.id}, Status={document.status.value}")

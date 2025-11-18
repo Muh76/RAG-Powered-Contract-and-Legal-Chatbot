@@ -13,11 +13,20 @@ from app.documents.storage import DocumentStorage
 from app.documents.parsers import DocumentParser
 from ingestion.chunkers.document_chunker import DocumentChunker, ChunkingConfig
 from ingestion.loaders.document_loaders import DocumentChunk as IngestionDocumentChunk
-from retrieval.embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
 from app.core.config import settings
 from app.core.errors import NotFoundError, AuthenticationError
 
 logger = logging.getLogger(__name__)
+
+# Import embedding generator with error handling
+try:
+    from retrieval.embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
+    EMBEDDING_GENERATOR_AVAILABLE = True
+except (ImportError, Exception) as e:
+    logger.warning(f"EmbeddingGenerator not available: {e}. Documents will be stored without embeddings.")
+    EmbeddingGenerator = None
+    EmbeddingConfig = None
+    EMBEDDING_GENERATOR_AVAILABLE = False
 
 
 class DocumentService:
@@ -34,21 +43,25 @@ class DocumentService:
             preserve_sentences=True
         ))
         
-        # Initialize embedding generator
-        try:
-            embedding_config = EmbeddingConfig(
-                model_name=settings.EMBEDDING_MODEL,
-                dimension=settings.EMBEDDING_DIMENSION,
-                batch_size=settings.EMBEDDING_BATCH_SIZE,
-                max_length=512
-            )
-            self.embedding_gen = EmbeddingGenerator(embedding_config)
-            if self.embedding_gen.model is None:
-                logger.warning("Embedding generator not available - documents will be stored without embeddings")
+        # Initialize embedding generator (with defensive error handling)
+        self.embedding_gen = None
+        if EMBEDDING_GENERATOR_AVAILABLE and EmbeddingGenerator and EmbeddingConfig:
+            try:
+                embedding_config = EmbeddingConfig(
+                    model_name=settings.EMBEDDING_MODEL,
+                    dimension=settings.EMBEDDING_DIMENSION,
+                    batch_size=settings.EMBEDDING_BATCH_SIZE,
+                    max_length=512
+                )
+                self.embedding_gen = EmbeddingGenerator(embedding_config)
+                if self.embedding_gen.model is None:
+                    logger.warning("Embedding generator not available - documents will be stored without embeddings")
+                    self.embedding_gen = None
+            except Exception as e:
+                logger.warning(f"Failed to initialize embedding generator: {e}")
                 self.embedding_gen = None
-        except Exception as e:
-            logger.warning(f"Failed to initialize embedding generator: {e}")
-            self.embedding_gen = None
+        else:
+            logger.warning("EmbeddingGenerator not available - documents will be stored without embeddings")
     
     def create_document(
         self,
@@ -56,7 +69,11 @@ class DocumentService:
         user_id: int,
         filename: str,
         content: bytes,
-        document_data: Optional[DocumentCreate] = None
+        document_data: Optional[DocumentCreate] = None,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        jurisdiction: Optional[str] = None,
+        tags: Optional[str] = None
     ) -> Document:
         """
         Create and process a new document.
@@ -66,7 +83,11 @@ class DocumentService:
             user_id: User ID
             filename: Original filename
             content: File content as bytes
-            document_data: Optional document metadata
+            document_data: Optional document metadata (can pass metadata here or via parameters)
+            title: Optional document title (overrides document_data.title if provided)
+            description: Optional document description (overrides document_data.description if provided)
+            jurisdiction: Optional jurisdiction (defaults to "UK" if not provided)
+            tags: Optional tags (overrides document_data.tags if provided)
             
         Returns:
             Created document
@@ -85,6 +106,12 @@ class DocumentService:
         except ValueError:
             raise ValueError(f"Unsupported file type: {file_ext}")
         
+        # Extract metadata from document_data or function parameters (parameters take precedence)
+        doc_title = title or (document_data.title if document_data else None) or filename
+        doc_description = description or (document_data.description if document_data else None)
+        doc_jurisdiction = jurisdiction or (document_data.jurisdiction if document_data else "UK")
+        doc_tags = tags or (document_data.tags if document_data else None)
+        
         # Create document record
         document = Document(
             user_id=user_id,
@@ -94,10 +121,10 @@ class DocumentService:
             file_size=len(content),
             file_path="",  # Will be set after saving
             status=DocumentStatus.UPLOADED,
-            title=document_data.title if document_data else None,
-            description=document_data.description if document_data else None,
-            jurisdiction=document_data.jurisdiction if document_data else "UK",
-            tags=document_data.tags if document_data else None
+            title=doc_title,
+            description=doc_description,
+            jurisdiction=doc_jurisdiction,
+            tags=doc_tags
         )
         
         db.add(document)
@@ -348,7 +375,7 @@ class DocumentService:
         Returns:
             List of search results with similarity scores
         """
-        if not self.embedding_gen or self.embedding_gen.model is None:
+        if not EMBEDDING_GENERATOR_AVAILABLE or not self.embedding_gen or self.embedding_gen.model is None:
             logger.warning("Embedding generator not available - cannot search documents")
             return []
         
