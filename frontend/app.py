@@ -118,11 +118,46 @@ class LegalChatbotUI:
         st.subheader("📚 Sources & Citations")
         
         for i, citation in enumerate(citations):
-            with st.expander(f"Citation [{citation['id']}] - {citation['section']}"):
-                st.write(f"**Title:** {citation['title']}")
-                st.write(f"**Section:** {citation['section']}")
+            # Handle both old format (dict) and new format (Source object)
+            if isinstance(citation, dict):
+                citation_id = citation.get('chunk_id', citation.get('id', f"citation_{i}"))
+                title = citation.get('title', 'Unknown')
+                section = citation.get('section', citation.get('metadata', {}).get('section', 'Unknown'))
+                text_snippet = citation.get('text_snippet', citation.get('text', ''))
+                similarity_score = citation.get('similarity_score', 0.0)
+                url = citation.get('url')
+                metadata = citation.get('metadata', {})
+            else:
+                # Source object (Pydantic model)
+                citation_id = citation.chunk_id if hasattr(citation, 'chunk_id') else f"citation_{i}"
+                title = citation.title if hasattr(citation, 'title') else 'Unknown'
+                section = citation.metadata.get('section', 'Unknown') if hasattr(citation, 'metadata') else 'Unknown'
+                text_snippet = citation.text_snippet if hasattr(citation, 'text_snippet') else ''
+                similarity_score = citation.similarity_score if hasattr(citation, 'similarity_score') else 0.0
+                url = citation.url if hasattr(citation, 'url') else None
+                metadata = citation.metadata if hasattr(citation, 'metadata') else {}
+            
+            # Create expander title with section info
+            expander_title = f"Source [{citation_id}]"
+            if section and section != 'Unknown':
+                expander_title += f" - {section}"
+            
+            with st.expander(expander_title):
+                st.write(f"**Title:** {title}")
+                if section and section != 'Unknown':
+                    st.write(f"**Section:** {section}")
+                if url:
+                    st.write(f"**URL:** {url}")
+                st.write(f"**Similarity Score:** {similarity_score:.3f}")
                 st.write(f"**Text Snippet:**")
-                st.text(citation['text_snippet'])
+                st.text(text_snippet[:500])  # Show first 500 chars
+                
+                # Show additional metadata if available
+                if metadata:
+                    if metadata.get('corpus'):
+                        st.write(f"**Corpus:** {metadata['corpus']}")
+                    if metadata.get('jurisdiction'):
+                        st.write(f"**Jurisdiction:** {metadata['jurisdiction']}")
     
     def display_response_metadata(self, response: Dict[str, Any]):
         """Display response metadata and validation info"""

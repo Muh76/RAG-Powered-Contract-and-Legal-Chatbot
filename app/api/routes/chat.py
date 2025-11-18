@@ -226,13 +226,17 @@ async def chat(
                 
                 sources.append(Source(
                     chunk_id=result.get("chunk_id", f"chunk_{i}"),
-                    text=result.get("text", "")[:200],  # First 200 chars
-                    section=metadata.get("section", "Unknown"),
-                    title=metadata.get("title", "Unknown") or result.get("title"),
-                    source=source_name,
-                    jurisdiction=metadata.get("jurisdiction", "UK"),
+                    title=metadata.get("title", "Unknown") or result.get("title", "Unknown"),
+                    url=metadata.get("url"),  # Optional field
+                    text_snippet=result.get("text", "")[:200],  # Fixed: was "text", should be "text_snippet"
                     similarity_score=result.get("similarity_score", 0.0),
-                    metadata={"corpus": corpus, **metadata}  # Include corpus info
+                    metadata={
+                        "corpus": corpus,
+                        "section": metadata.get("section", "Unknown"),
+                        "source": source_name,
+                        "jurisdiction": metadata.get("jurisdiction", "UK"),
+                        **metadata  # Include all other metadata
+                    }
                 ))
             
         except Exception as e:
