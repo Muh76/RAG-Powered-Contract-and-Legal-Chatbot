@@ -54,6 +54,17 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "your-jwt-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    
+    # OAuth2 Configuration
+    OAUTH_GOOGLE_CLIENT_ID: Optional[str] = None
+    OAUTH_GOOGLE_CLIENT_SECRET: Optional[str] = None
+    OAUTH_GITHUB_CLIENT_ID: Optional[str] = None
+    OAUTH_GITHUB_CLIENT_SECRET: Optional[str] = None
+    OAUTH_MICROSOFT_CLIENT_ID: Optional[str] = None
+    OAUTH_MICROSOFT_CLIENT_SECRET: Optional[str] = None
+    OAUTH_MICROSOFT_TENANT_ID: str = "common"  # "common" for multi-tenant, specific tenant ID for single-tenant
+    OAUTH_REDIRECT_URI: str = "http://localhost:8501/auth/callback"  # Default redirect URI
     
     # CORS Configuration
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8501"]

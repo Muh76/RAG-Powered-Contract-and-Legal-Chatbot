@@ -102,6 +102,17 @@ class AuthenticationError(APIError):
         )
 
 
+class AuthorizationError(APIError):
+    """Authorization error (403)"""
+    def __init__(self, message: str = "Access denied", details: Optional[Dict[str, Any]] = None):
+        super().__init__(
+            message=message,
+            status_code=status.HTTP_403_FORBIDDEN,
+            error_code="AUTHORIZATION_ERROR",
+            details=details
+        )
+
+
 class RateLimitError(APIError):
     """Rate limit error (429)"""
     def __init__(self, message: str = "Rate limit exceeded", details: Optional[Dict[str, Any]] = None):
