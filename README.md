@@ -10,7 +10,9 @@ This project demonstrates end-to-end AI system development with:
 - **Phase 3**: ✅ Agentic RAG with LangChain agents and tool calling - **COMPLETE**
 - **Phase 4.1**: ✅ Comprehensive testing and validation - **COMPLETE**
 - **Phase 4.2**: ✅ Monitoring and observability - **COMPLETE**
-- **Phase 5**: 📋 Enterprise features and deployment
+- **Phase 5.1**: ✅ Database setup & migrations - **COMPLETE**
+- **Phase 5.2**: ✅ Route protection with authentication & RBAC - **COMPLETE**
+- **Phase 5**: 📋 Enterprise features and deployment (in progress)
 
 ### 📊 Phase 2 Status (Advanced RAG) - ✅ **COMPLETE**
 - ✅ **Dataset Preparation**: 1,411 chunks (1,389 CUAD + 22 UK statutes)
@@ -89,6 +91,19 @@ This project demonstrates end-to-end AI system development with:
    ```bash
    # Create FAISS index and embeddings
    python scripts/ingest_data.py
+   ```
+
+6. **Verify Authentication (Recommended)**
+   ```bash
+   # Quick verification - no API server required
+   export DATABASE_URL="postgresql://javadbeni@localhost:5432/legal_chatbot"
+   export JWT_SECRET_KEY="test-secret-key-for-testing"
+   export SECRET_KEY="test-secret-key"
+   python scripts/test_route_protection.py
+   
+   # Or use quick verification script
+   chmod +x scripts/quick_verify_auth.sh
+   ./scripts/quick_verify_auth.sh
    ```
 
 ## ✅ Phase 5: Authentication & Authorization - **COMPLETE**
