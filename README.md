@@ -78,14 +78,15 @@ This project demonstrates end-to-end AI system development with:
 
 4. **Access the UI**
    - Streamlit UI: http://localhost:8501
-   - FastAPI docs: http://localhost:8000/docs (Swagger UI)
-   - ReDoc: http://localhost:8000/redoc
-   - API Health: http://localhost:8000/api/v1/health
-   - Detailed Health: http://localhost:8000/api/v1/health/detailed
-   - Metrics Summary: http://localhost:8000/api/v1/metrics/summary
-   - System Metrics: http://localhost:8000/api/v1/metrics/system
-   - Hybrid Search API: http://localhost:8000/api/v1/search/hybrid
-   - Agentic Chat API: http://localhost:8000/api/v1/agentic-chat
+   - FastAPI docs: http://localhost:8000/docs (Swagger UI) - Public
+   - ReDoc: http://localhost:8000/redoc - Public
+   - API Health: http://localhost:8000/api/v1/health - Public (no auth required)
+   - Detailed Health: http://localhost:8000/api/v1/health/detailed - Public
+   - Metrics Summary: http://localhost:8000/api/v1/metrics/summary - Admin only
+   - System Metrics: http://localhost:8000/api/v1/metrics/system - Admin only
+   - Hybrid Search API: http://localhost:8000/api/v1/search/hybrid - Auth required
+   - Agentic Chat API: http://localhost:8000/api/v1/agentic-chat - Auth required
+   - Authentication: http://localhost:8000/api/v1/auth - Register, Login, OAuth
 
 5. **Ingest Data (if needed)**
    ```bash
