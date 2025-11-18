@@ -11,6 +11,9 @@ from app.services.guardrails_service import GuardrailsService
 from app.services.llm_service import LLMService
 from app.auth.dependencies import get_current_active_user
 from app.auth.models import User
+from app.documents.service import DocumentService
+from app.core.database import get_db
+from sqlalchemy.orm import Session
 from datetime import datetime
 import time
 import logging
@@ -88,9 +91,19 @@ def map_reason_to_safety_flag(reason: str) -> SafetyFlag:
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+    include_private_corpus: bool = True
 ):
-    """Chat endpoint with RAG pipeline (requires authentication)"""
+    """
+    Chat endpoint with RAG pipeline (requires authentication).
+    
+    Args:
+        request: Chat request with query
+        current_user: Current authenticated user
+        db: Database session
+        include_private_corpus: Whether to include user's private documents in search (default: True)
+    """
     start_time = time.time()
     
     try:
@@ -134,14 +147,42 @@ async def chat(
             logger.error(f"RAG service error: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"RAG service error: {str(e)}. Run data ingestion first.")
         
+        # Search user's private documents if enabled
+        private_corpus_results = None
+        if include_private_corpus:
+            try:
+                doc_service = DocumentService()
+                private_corpus_results = doc_service.search_user_documents(
+                    db=db,
+                    user_id=current_user.id,
+                    query=request.query,
+                    top_k=request.top_k or 5,
+                    similarity_threshold=0.7
+                )
+                logger.info(f"Found {len(private_corpus_results)} results from private corpus for user {current_user.id}")
+            except Exception as e:
+                logger.warning(f"Error searching private corpus: {e}")
+                private_corpus_results = []
+        
         # CRITICAL FIX: Run blocking PyTorch/FAISS operations in thread pool to prevent segfault
         retrieval_start = time.time()
         try:
             # Run retrieval in executor to avoid blocking event loop and segfaults
             loop = asyncio.get_event_loop()
+            
+            # Prepare search function with private corpus if available
+            def search_func():
+                return rag.search(
+                    query=request.query,
+                    top_k=request.top_k or 5,
+                    user_id=current_user.id if include_private_corpus else None,
+                    include_private_corpus=include_private_corpus and private_corpus_results is not None,
+                    private_corpus_results=private_corpus_results
+                )
+            
             retrieval_result = await loop.run_in_executor(
                 _executor,
-                lambda: rag.search(request.query, top_k=request.top_k or 5)
+                search_func
             )
             
             retrieval_time_ms = (time.time() - retrieval_start) * 1000
@@ -179,14 +220,19 @@ async def chat(
             sources = []
             for i, result in enumerate(retrieval_result):
                 metadata = result.get("metadata", {})
+                # Determine if source is from private or public corpus
+                corpus = metadata.get("corpus", "public")
+                source_name = "Private Document" if corpus == "private" else metadata.get("source", "Public Corpus")
+                
                 sources.append(Source(
                     chunk_id=result.get("chunk_id", f"chunk_{i}"),
                     text=result.get("text", "")[:200],  # First 200 chars
                     section=metadata.get("section", "Unknown"),
-                    title=metadata.get("title", "Unknown"),
-                    source=metadata.get("source", "Unknown"),
+                    title=metadata.get("title", "Unknown") or result.get("title"),
+                    source=source_name,
                     jurisdiction=metadata.get("jurisdiction", "UK"),
-                    similarity_score=result.get("similarity_score", 0.0)
+                    similarity_score=result.get("similarity_score", 0.0),
+                    metadata={"corpus": corpus, **metadata}  # Include corpus info
                 ))
             
         except Exception as e:

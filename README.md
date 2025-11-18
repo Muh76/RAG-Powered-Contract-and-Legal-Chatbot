@@ -12,6 +12,7 @@ This project demonstrates end-to-end AI system development with:
 - **Phase 4.2**: ✅ Monitoring and observability - **COMPLETE**
 - **Phase 5.1**: ✅ Database setup & migrations - **COMPLETE**
 - **Phase 5.2**: ✅ Route protection with authentication & RBAC - **COMPLETE**
+- **Phase 5.3**: ✅ Document upload system - **COMPLETE**
 - **Phase 5**: 📋 Enterprise features and deployment (in progress)
 
 ### 📊 Phase 2 Status (Advanced RAG) - ✅ **COMPLETE**
@@ -107,6 +108,15 @@ This project demonstrates end-to-end AI system development with:
    ./scripts/quick_verify_auth.sh
    ```
 
+7. **Test Document Upload System (New!)**
+   ```bash
+   # Test document upload functionality
+   export DATABASE_URL="postgresql://javadbeni@localhost:5432/legal_chatbot"
+   export JWT_SECRET_KEY="test-secret-key-for-testing"
+   export SECRET_KEY="test-secret-key"
+   python scripts/test_document_upload.py
+   ```
+
 ## ✅ Phase 5: Authentication & Authorization - **COMPLETE**
 
 ### Phase 5.1: Database Setup & Migrations - ✅ **COMPLETE**
@@ -135,6 +145,96 @@ This project demonstrates end-to-end AI system development with:
 - ✅ `/api/v1/health` - Health checks
 - ✅ `/docs` - API documentation (Swagger UI)
 - ✅ `/redoc` - API documentation (ReDoc)
+
+### Phase 5.3: Document Upload System - ✅ **COMPLETE**
+- ✅ **Document Management**
+  - PDF, DOCX, TXT document parsing and processing
+  - User-specific document storage
+  - Automatic chunking with overlap
+  - Embedding generation and indexing
+  - Status tracking (uploaded → parsing → processing → indexing → completed)
+  
+- ✅ **Private Corpus Search**
+  - User-scoped document retrieval
+  - Semantic search over private documents
+  - Cosine similarity scoring
+  - Combined public + private corpus search using RRF
+  
+- ✅ **API Endpoints**
+  - `POST /api/v1/documents/upload` - Upload document (Solicitor/Admin)
+  - `GET /api/v1/documents` - List documents with pagination
+  - `GET /api/v1/documents/{id}` - Get document details with chunks
+  - `PUT /api/v1/documents/{id}` - Update document metadata
+  - `DELETE /api/v1/documents/{id}` - Delete document
+  - `POST /api/v1/documents/{id}/reprocess` - Reprocess document
+  
+- ✅ **Integration**
+  - Chat endpoint includes private corpus by default
+  - Hybrid search combines public + private results
+  - Metadata tagging (public/private corpus)
+  - Source attribution with corpus information
+
+**Document Upload Usage:**
+```bash
+# 1. Register/Login to get JWT token
+curl -X POST http://localhost:8000/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "solicitor@example.com",
+    "password": "securepassword123",
+    "full_name": "Test Solicitor",
+    "role": "solicitor"
+  }'
+
+# 2. Login to get access token
+curl -X POST http://localhost:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "solicitor@example.com",
+    "password": "securepassword123"
+  }'
+
+# 3. Upload document (requires Solicitor/Admin role)
+curl -X POST http://localhost:8000/api/v1/documents/upload \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -F "file=@/path/to/document.pdf" \
+  -F "title=My Legal Document" \
+  -F "description=Test document" \
+  -F "jurisdiction=UK" \
+  -F "tags=contract,employment"
+
+# 4. List documents
+curl -X GET "http://localhost:8000/api/v1/documents?skip=0&limit=10" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 5. Get document details
+curl -X GET "http://localhost:8000/api/v1/documents/{document_id}" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 6. Chat with private corpus (automatic inclusion)
+curl -X POST http://localhost:8000/api/v1/chat \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "What are my rights according to my uploaded documents?",
+    "top_k": 10
+  }'
+```
+
+**Testing:**
+```bash
+# Test document upload system
+python scripts/test_document_upload.py
+
+# Expected output:
+# ✅ Database connection successful
+# ✅ Document tables exist
+# ✅ Storage service working
+# ✅ Document parsing working
+# ✅ Document upload and processing working
+# ✅ Document retrieval working
+# ✅ Private corpus search working
+```
 
 **Verification:**
 ```bash
@@ -278,12 +378,12 @@ See [Verification Guide](docs/verification_guide.md) for detailed testing instru
   - `GET /api/v1/metrics/tools` - Tool usage statistics
   - `GET /api/v1/metrics/system` - System metrics
 
-### Phase 5 (Enterprise Features) - 📋 **PLANNED**
-- 🔄 OAuth2 authentication and RBAC
-- 🔄 Multi-tenant architecture
-- 🔄 Document upload and private corpora
-- 🔄 Multilingual support (English + Farsi)
-- 🔄 Billing and monetization hooks
+### Phase 5 (Enterprise Features) - 🔄 **IN PROGRESS**
+- ✅ OAuth2 authentication and RBAC - **COMPLETE**
+- ✅ Document upload and private corpora - **COMPLETE**
+- 🔄 Multi-tenant architecture - **PLANNED**
+- 🔄 Multilingual support (English + Farsi) - **PLANNED**
+- 🔄 Billing and monetization hooks - **PLANNED**
 
 ## 🛠️ Tech Stack
 
@@ -359,6 +459,9 @@ See [Verification Guide](docs/verification_guide.md) for detailed testing instru
 - [Phase 4.2 Monitoring Summary](docs/phase4_2_monitoring_summary.md)
 - [Monitoring Verification Guide](docs/verify_monitoring.md)
 - [Monitoring API Usage Guide](MONITORING_API_USAGE.md)
+- [Phase 5.1 Authentication Summary](docs/phase5_1_authentication_summary.md)
+- [Phase 5.2 Route Protection](docs/phase5_2_route_protection_complete.md)
+- [Phase 5.3 Document Upload System](docs/phase5_3_document_upload_complete.md)
 
 ## 🔍 Phase 2 Features in Detail
 
@@ -629,7 +732,10 @@ curl http://localhost:8000/api/v1/metrics/tools
 - **Phase 3**: ✅ **COMPLETED** - Agentic RAG with LangChain agents, tool calling, and multi-step reasoning
 - **Phase 4.1**: ✅ **COMPLETED** - Comprehensive testing and validation (end-to-end, integration, regression, performance)
 - **Phase 4.2**: ✅ **COMPLETED** - Monitoring and observability (structured logging, health checks, metrics collection)
-- **Phase 5**: 📋 **PLANNED** - Enterprise features and deployment
+- **Phase 5**: 🔄 **IN PROGRESS** - Enterprise features and deployment
+  - ✅ Phase 5.1: Database setup & migrations
+  - ✅ Phase 5.2: Route protection with authentication & RBAC
+  - ✅ Phase 5.3: Document upload system
 
 ### Phase 2 Completion Summary
 

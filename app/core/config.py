@@ -83,6 +83,7 @@ class Settings(BaseSettings):
     # File Upload Configuration
     MAX_FILE_SIZE: int = 10485760  # 10MB
     ALLOWED_FILE_TYPES: List[str] = ["pdf", "docx", "txt"]
+    DOCUMENT_STORAGE_PATH: str = "data/documents"  # Base path for document storage
     
     # Rate Limiting
     RATE_LIMIT_REQUESTS: int = 100

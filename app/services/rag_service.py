@@ -192,7 +192,10 @@ class RAGService:
         fusion_strategy: Optional[str] = None,
         metadata_filter: Optional[MetadataFilter] = None,
         include_explanation: bool = False,
-        highlight_sources: bool = False
+        highlight_sources: bool = False,
+        user_id: Optional[int] = None,
+        include_private_corpus: bool = False,
+        private_corpus_results: Optional[List[Dict[str, Any]]] = None
     ) -> List[Dict[str, Any]]:
         """
         Search for relevant chunks.
@@ -203,6 +206,11 @@ class RAGService:
             use_hybrid: If True, use hybrid search; if None, use instance default (self.use_hybrid)
             fusion_strategy: Fusion strategy for hybrid search ("rrf" or "weighted"). Only used if use_hybrid=True
             metadata_filter: Optional metadata filter for hybrid search
+            include_explanation: Whether to include explanation in results
+            highlight_sources: Whether to highlight matched terms
+            user_id: Optional user ID for private corpus search
+            include_private_corpus: Whether to include user's private documents in search
+            private_corpus_results: Pre-fetched private corpus results (optional)
             
         Returns:
             List of result dictionaries
@@ -210,18 +218,93 @@ class RAGService:
         # Determine if we should use hybrid search
         use_hybrid_search = use_hybrid if use_hybrid is not None else self.use_hybrid
         
-        # Use hybrid search if requested and available
+        # Get public corpus results
         if use_hybrid_search and self.hybrid_retriever:
-            results = self._hybrid_search(query, top_k, fusion_strategy, metadata_filter)
+            public_results = self._hybrid_search(query, top_k, fusion_strategy, metadata_filter)
         else:
             # Fall back to original semantic search (backward compatible)
-            results = self._semantic_search(query, top_k)
+            public_results = self._semantic_search(query, top_k)
+        
+        # Combine with private corpus if requested
+        if include_private_corpus and user_id and private_corpus_results:
+            combined_results = self._combine_results(public_results, private_corpus_results, top_k)
+        else:
+            combined_results = public_results
         
         # Add explainability if requested
         if include_explanation or highlight_sources:
-            results = self._add_explainability(results, query, include_explanation, highlight_sources)
+            combined_results = self._add_explainability(combined_results, query, include_explanation, highlight_sources)
         
-        return results
+        return combined_results
+    
+    def _combine_results(
+        self,
+        public_results: List[Dict[str, Any]],
+        private_results: List[Dict[str, Any]],
+        top_k: int
+    ) -> List[Dict[str, Any]]:
+        """
+        Combine public and private corpus results using reciprocal rank fusion (RRF).
+        
+        Args:
+            public_results: Results from public corpus
+            private_results: Results from private corpus
+            top_k: Number of top results to return
+            
+        Returns:
+            Combined and ranked results
+        """
+        import numpy as np
+        
+        # Create a dictionary to track combined scores
+        combined_scores = {}
+        k = 60  # RRF parameter
+        
+        # Add public results with RRF scores
+        for rank, result in enumerate(public_results, start=1):
+            chunk_id = result.get("chunk_id", f"public_{rank}")
+            if chunk_id not in combined_scores:
+                combined_scores[chunk_id] = {
+                    "result": result,
+                    "score": 0.0,
+                    "is_private": False
+                }
+            combined_scores[chunk_id]["score"] += 1.0 / (k + rank)
+            # Mark metadata to indicate public corpus
+            if "metadata" not in combined_scores[chunk_id]["result"]:
+                combined_scores[chunk_id]["result"]["metadata"] = {}
+            combined_scores[chunk_id]["result"]["metadata"]["corpus"] = "public"
+        
+        # Add private results with RRF scores
+        for rank, result in enumerate(private_results, start=1):
+            chunk_id = result.get("chunk_id", f"private_{rank}")
+            if chunk_id not in combined_scores:
+                combined_scores[chunk_id] = {
+                    "result": result,
+                    "score": 0.0,
+                    "is_private": True
+                }
+            combined_scores[chunk_id]["score"] += 1.0 / (k + rank)
+            # Mark metadata to indicate private corpus
+            if "metadata" not in combined_scores[chunk_id]["result"]:
+                combined_scores[chunk_id]["result"]["metadata"] = {}
+            combined_scores[chunk_id]["result"]["metadata"]["corpus"] = "private"
+        
+        # Sort by combined score
+        sorted_results = sorted(
+            combined_scores.values(),
+            key=lambda x: x["score"],
+            reverse=True
+        )
+        
+        # Format results
+        formatted_results = []
+        for item in sorted_results[:top_k]:
+            result = item["result"].copy()
+            result["similarity_score"] = item["score"]  # Update with combined score
+            formatted_results.append(result)
+        
+        return formatted_results
     
     def _hybrid_search(
         self,
