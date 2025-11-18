@@ -4,7 +4,7 @@
 import os
 import sys
 from pathlib import Path
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from app.models.schemas import (
     AgenticChatRequest, AgenticChatResponse, 
     ToolCall, SafetyReport, SafetyFlag, LatencyAndScores,
@@ -12,6 +12,8 @@ from app.models.schemas import (
 )
 from app.services.agent_service import AgenticRAGService
 from app.services.guardrails_service import GuardrailsService
+from app.auth.dependencies import get_current_active_user, require_solicitor_or_admin
+from app.auth.models import User, UserRole
 from datetime import datetime
 import time
 import logging
@@ -84,9 +86,17 @@ def map_reason_to_safety_flag(reason: str) -> SafetyFlag:
 
 
 @router.post("/agentic-chat", response_model=AgenticChatResponse)
-async def agentic_chat(request: AgenticChatRequest):
+async def agentic_chat(
+    request: AgenticChatRequest,
+    current_user: User = Depends(get_current_active_user)
+):
     """
     Agentic chat endpoint with LangChain agents and tool calling.
+    Requires authentication.
+    
+    Role-based access:
+    - Public users: Can only use "public" mode
+    - Solicitor/Admin users: Can use both "public" and "solicitor" modes
     
     This endpoint enables:
     - Autonomous tool selection based on query
@@ -95,6 +105,13 @@ async def agentic_chat(request: AgenticChatRequest):
     - Complex query handling
     """
     start_time = time.time()
+    
+    # Role-based access control: Only Solicitor/Admin can use "solicitor" mode
+    if request.mode.value == "solicitor" and current_user.role not in [UserRole.SOLICITOR, UserRole.ADMIN]:
+        raise HTTPException(
+            status_code=403,
+            detail="Solicitor mode requires Solicitor or Admin role. Public users can only use 'public' mode."
+        )
     
     try:
         # 1. Validate query with guardrails

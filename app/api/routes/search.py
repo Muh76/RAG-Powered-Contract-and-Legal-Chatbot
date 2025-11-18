@@ -4,7 +4,7 @@
 import os
 import sys
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Optional, List
 import time
 import logging
@@ -20,6 +20,8 @@ from app.models.schemas import (
 )
 from app.services.rag_service import RAGService
 from retrieval.metadata_filter import MetadataFilter, FilterOperator
+from app.auth.dependencies import get_current_active_user
+from app.auth.models import User
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent.parent.parent
@@ -101,12 +103,17 @@ def create_metadata_filter(metadata_filters: List[MetadataFilterRequest]) -> Opt
 
 
 @router.post("/search/hybrid", response_model=HybridSearchResponse)
-async def hybrid_search(request: HybridSearchRequest):
+async def hybrid_search(
+    request: HybridSearchRequest,
+    current_user: User = Depends(get_current_active_user)
+):
     """
     Hybrid search endpoint combining BM25 + Semantic search with metadata filtering.
+    Requires authentication.
     
     Args:
         request: Hybrid search request with query, filters, and configuration
+        current_user: Authenticated user (injected via dependency)
         
     Returns:
         Hybrid search response with results including BM25, semantic, and fused scores
@@ -219,10 +226,12 @@ async def hybrid_search_get(
     similarity_threshold: float = Query(default=0.0, ge=0.0, le=1.0),
     jurisdiction: Optional[str] = None,
     document_type: Optional[str] = None,
-    source: Optional[str] = None
+    source: Optional[str] = None,
+    current_user: User = Depends(get_current_active_user)
 ):
     """
     GET endpoint for hybrid search with query parameters.
+    Requires authentication.
     
     Args:
         query: Search query text
@@ -232,6 +241,7 @@ async def hybrid_search_get(
         jurisdiction: Filter by jurisdiction (optional)
         document_type: Filter by document type (optional)
         source: Filter by source (optional)
+        current_user: Authenticated user (injected via dependency)
         
     Returns:
         Hybrid search response
