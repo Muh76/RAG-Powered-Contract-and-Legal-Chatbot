@@ -725,6 +725,18 @@ curl http://localhost:8000/api/v1/metrics/endpoints
 curl http://localhost:8000/api/v1/metrics/tools
 ```
 
+**Phase 5 Tests (Enterprise Features):**
+```bash
+# Test authentication (requires database)
+python scripts/test_auth_database.py
+
+# Test route protection
+python scripts/test_route_protection.py
+
+# Test document upload system
+python scripts/test_document_upload.py
+```
+
 ## 📋 Project Status
 
 - **Phase 1**: ✅ **COMPLETED** - MVP with RAG pipeline, guardrails, and web interface
