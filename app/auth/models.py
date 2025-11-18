@@ -1,6 +1,7 @@
 # Legal Chatbot - Authentication Database Models
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, TypeDecorator
+from sqlalchemy.dialects.postgresql import ENUM as PostgreSQL_ENUM
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
@@ -23,6 +24,31 @@ class OAuthProvider(str, enum.Enum):
     MICROSOFT = "microsoft"
 
 
+class EnumValueType(TypeDecorator):
+    """TypeDecorator that stores enum values (not names) in the database"""
+    impl = String
+    cache_ok = True
+    
+    def __init__(self, enum_class, *args, **kwargs):
+        self.enum_class = enum_class
+        super().__init__(*args, **kwargs)
+    
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if isinstance(value, self.enum_class):
+            return value.value
+        return value
+    
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        try:
+            return self.enum_class(value)
+        except ValueError:
+            return value
+
+
 class User(Base):
     """User model"""
     __tablename__ = "users"
@@ -34,7 +60,7 @@ class User(Base):
     full_name = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
-    role = Column(SQLEnum(UserRole), default=UserRole.PUBLIC, nullable=False)
+    role = Column(PostgreSQL_ENUM(UserRole, name='userrole', create_type=False, values_callable=lambda obj: [e.value for e in obj]), default=UserRole.PUBLIC, nullable=False)
     avatar_url = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -54,7 +80,7 @@ class OAuthAccount(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    provider = Column(SQLEnum(OAuthProvider), nullable=False)
+    provider = Column(PostgreSQL_ENUM(OAuthProvider, name='oauthprovider', create_type=False, values_callable=lambda obj: [e.value for e in obj]), nullable=False)
     provider_user_id = Column(String(255), nullable=False)
     provider_email = Column(String(255), nullable=True)
     access_token = Column(String(1000), nullable=True)  # Encrypted in production
