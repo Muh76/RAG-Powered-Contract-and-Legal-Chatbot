@@ -51,6 +51,14 @@ This project demonstrates end-to-end AI system development with:
    ```bash
    pip install -r requirements.txt
    export OPENAI_API_KEY="your-api-key-here"
+   
+   # Set up database (PostgreSQL required for authentication)
+   export DATABASE_URL="postgresql://user:password@localhost:5432/legal_chatbot"
+   export JWT_SECRET_KEY="your-jwt-secret-key"
+   export SECRET_KEY="your-secret-key"
+   
+   # Run database migrations
+   python -m alembic upgrade head
    ```
 
 3. **Run the application**
@@ -114,13 +122,28 @@ This project demonstrates end-to-end AI system development with:
 
 **Verification:**
 ```bash
-# Quick verification test
+# Quick verification test (recommended first)
+export DATABASE_URL="postgresql://javadbeni@localhost:5432/legal_chatbot"
+export JWT_SECRET_KEY="test-secret-key-for-testing"
+export SECRET_KEY="test-secret-key"
 python scripts/test_route_protection.py
 
-# Test with API server running
+# Full HTTP endpoint test (requires API server running)
 uvicorn app.api.main:app --reload &
+export API_BASE_URL="http://localhost:8000"
 python scripts/test_api_endpoints.py
+
+# Or use quick verification script
+chmod +x scripts/quick_verify_auth.sh
+./scripts/quick_verify_auth.sh
 ```
+
+**Verification Results**: ✅ All tests passing
+- ✅ Authentication dependencies working correctly
+- ✅ All routes properly protected
+- ✅ Role-based access control enforced
+- ✅ Token creation and verification working
+- ✅ Token refresh working
 
 See [Verification Guide](docs/verification_guide.md) for detailed testing instructions.
 
