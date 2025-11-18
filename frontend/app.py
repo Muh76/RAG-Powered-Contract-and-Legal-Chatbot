@@ -2,8 +2,10 @@
 import streamlit as st
 import requests
 import json
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import time
+from frontend.auth_ui import AuthUI
+from frontend.components.protected_route import protected_route, require_role
 
 # Streamlit app configuration
 st.set_page_config(
@@ -17,12 +19,15 @@ class LegalChatbotUI:
     def __init__(self):
         self.api_base_url = "http://localhost:8000"
         self.session_state = st.session_state
+        self.auth_ui = AuthUI(api_base_url=self.api_base_url)
         
         # Initialize session state
         if "messages" not in self.session_state:
             self.session_state.messages = []
         if "api_status" not in self.session_state:
             self.session_state.api_status = "unknown"
+        if "current_page" not in self.session_state:
+            self.session_state.current_page = "chat"
     
     def check_api_status(self) -> bool:
         """Check if the FastAPI server is running"""
@@ -39,8 +44,17 @@ class LegalChatbotUI:
             return False
     
     def send_chat_request(self, query: str, mode: str, top_k: int = 3) -> Dict[str, Any]:
-        """Send chat request to FastAPI"""
+        """Send chat request to FastAPI with authentication"""
         try:
+            # Ensure token is valid
+            if not self.auth_ui.ensure_authenticated():
+                return {
+                    "error": "Authentication Error",
+                    "detail": "Please login to use the chat feature"
+                }
+            
+            headers = self.auth_ui.get_auth_headers()
+            
             response = requests.post(
                 f"{self.api_base_url}/api/v1/chat",
                 json={
@@ -48,11 +62,33 @@ class LegalChatbotUI:
                     "mode": mode,
                     "top_k": top_k
                 },
+                headers=headers,
                 timeout=30
             )
             
             if response.status_code == 200:
                 return response.json()
+            elif response.status_code == 401:
+                # Token expired, try refresh
+                if self.auth_ui.refresh_access_token():
+                    headers = self.auth_ui.get_auth_headers()
+                    response = requests.post(
+                        f"{self.api_base_url}/api/v1/chat",
+                        json={
+                            "query": query,
+                            "mode": mode,
+                            "top_k": top_k
+                        },
+                        headers=headers,
+                        timeout=30
+                    )
+                    if response.status_code == 200:
+                        return response.json()
+                
+                return {
+                    "error": "Authentication Error",
+                    "detail": "Session expired. Please login again."
+                }
             else:
                 return {
                     "error": f"API Error: {response.status_code}",
@@ -110,56 +146,110 @@ class LegalChatbotUI:
                 st.write(f"- Avg similarity: {ri.get('avg_similarity_score', 0):.3f}")
     
     def render_sidebar(self):
-        """Render the sidebar with controls"""
+        """Render the sidebar with controls and user profile"""
         st.sidebar.title("⚖️ Legal Chatbot")
         
+        # Check authentication first
+        if not self.auth_ui.ensure_authenticated():
+            st.sidebar.info("🔐 Please login to continue")
+            if st.sidebar.button("Go to Login", use_container_width=True):
+                self.session_state.current_page = "login"
+                st.rerun()
+            return None, None
+        
+        # Display user profile
+        self.auth_ui.render_user_profile()
+        
+        # Navigation
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("🧭 Navigation")
+        
+        page = st.sidebar.radio(
+            "Page",
+            ["💬 Chat", "📄 Documents", "⚙️ Settings"],
+            index=0 if self.session_state.current_page == "chat" else 1 if self.session_state.current_page == "documents" else 2
+        )
+        
+        if page == "💬 Chat":
+            self.session_state.current_page = "chat"
+        elif page == "📄 Documents":
+            self.session_state.current_page = "documents"
+        elif page == "⚙️ Settings":
+            self.session_state.current_page = "settings"
+        
         # API Status
+        st.sidebar.markdown("---")
         api_connected = self.check_api_status()
         
         if api_connected:
             st.sidebar.success("🟢 API Connected")
         else:
             st.sidebar.error("🔴 API Disconnected")
-            st.sidebar.info("Start the FastAPI server with: `uvicorn app:app --reload --port 8000`")
+            st.sidebar.info("Start the FastAPI server with: `uvicorn app.api.main:app --reload --port 8000`")
         
-        # Mode Selection
-        st.sidebar.subheader("🎯 Response Mode")
-        mode = st.sidebar.selectbox(
-            "Choose response style:",
-            ["solicitor", "public"],
-            index=0,
-            help="Solicitor: Technical legal language. Public: Plain language explanations."
-        )
-        
-        # Advanced Settings
-        st.sidebar.subheader("⚙️ Advanced Settings")
-        top_k = st.sidebar.slider(
-            "Number of sources to retrieve:",
-            min_value=1,
-            max_value=10,
-            value=3,
-            help="How many legal sources to retrieve for the answer"
-        )
-        
-        # Clear Chat
-        if st.sidebar.button("🗑️ Clear Chat History"):
-            self.session_state.messages = []
-            st.rerun()
-        
-        # About Section
-        st.sidebar.subheader("ℹ️ About")
-        st.sidebar.info("""
-        This legal chatbot provides answers based on UK law using:
-        - Sale of Goods Act 1979
-        - Employment Rights Act 1996
-        - Data Protection Act 2018
-        
-        **Note:** This is for educational purposes only and does not constitute legal advice.
-        """)
-        
-        return mode, top_k
+        # Mode Selection (only show in chat page)
+        if self.session_state.current_page == "chat":
+            st.sidebar.markdown("---")
+            st.sidebar.subheader("🎯 Response Mode")
+            
+            user_role = self.auth_ui.get_user_role()
+            if user_role in ["solicitor", "admin"]:
+                mode_options = ["solicitor", "public"]
+            else:
+                mode_options = ["public"]
+            
+            mode = st.sidebar.selectbox(
+                "Choose response style:",
+                mode_options,
+                index=0,
+                help="Solicitor: Technical legal language. Public: Plain language explanations."
+            )
+            
+            # Advanced Settings
+            st.sidebar.subheader("⚙️ Advanced Settings")
+            top_k = st.sidebar.slider(
+                "Number of sources to retrieve:",
+                min_value=1,
+                max_value=10,
+                value=3,
+                help="How many legal sources to retrieve for the answer"
+            )
+            
+            # Clear Chat
+            if st.sidebar.button("🗑️ Clear Chat History"):
+                self.session_state.messages = []
+                st.rerun()
+            
+            # About Section
+            st.sidebar.markdown("---")
+            st.sidebar.subheader("ℹ️ About")
+            st.sidebar.info("""
+            This legal chatbot provides answers based on UK law using:
+            - Sale of Goods Act 1979
+            - Employment Rights Act 1996
+            - Data Protection Act 2018
+            
+            **Note:** This is for educational purposes only and does not constitute legal advice.
+            """)
+            
+            return mode, top_k
+        else:
+            return None, None
     
-    def render_main_interface(self, mode: str, top_k: int):
+    def render_main_interface(self, mode: Optional[str] = None, top_k: Optional[int] = None):
+        """Render the main interface based on current page"""
+        page = self.session_state.current_page
+        
+        if page == "chat":
+            self._render_chat_interface(mode or "public", top_k or 3)
+        elif page == "documents":
+            self._render_documents_interface()
+        elif page == "settings":
+            self._render_settings_interface()
+        else:
+            self._render_chat_interface(mode or "public", top_k or 3)
+    
+    def _render_chat_interface(self, mode: str, top_k: int):
         """Render the main chat interface"""
         st.title("⚖️ Legal Chatbot")
         st.markdown("Ask questions about UK law and get answers with proper citations!")
@@ -194,26 +284,229 @@ class LegalChatbotUI:
                     st.text(response.get('detail', ''))
                 else:
                     # Display answer
-                    st.markdown(response['answer'])
+                    st.markdown(response.get('answer', 'No answer provided'))
                     
                     # Store response with metadata
                     self.session_state.messages.append({
                         "role": "assistant",
-                        "content": response['answer'],
-                        "citations": response.get('citations', []),
+                        "content": response.get('answer', ''),
+                        "citations": response.get('sources', []),
                         "metadata": response
                     })
                     
                     # Display citations
-                    self.display_citations(response.get('citations', []))
+                    sources = response.get('sources', [])
+                    if sources:
+                        self.display_citations(sources)
                     
                     # Display metadata
-                    self.display_response_metadata(response)
+                    if response:
+                        self.display_response_metadata(response)
+    
+    def _render_documents_interface(self):
+        """Render documents management interface"""
+        st.title("📄 My Documents")
+        
+        # Check if user can manage documents (solicitor/admin only)
+        if not require_role("solicitor", "admin"):
+            st.warning("⚠️ Document management is only available for Solicitor and Admin users.")
+            return
+        
+        # List documents
+        try:
+            headers = self.auth_ui.get_auth_headers()
+            response = requests.get(
+                f"{self.api_base_url}/api/v1/documents",
+                headers=headers,
+                params={"skip": 0, "limit": 100},
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                documents = data.get("documents", [])
+                total = data.get("total", 0)
+                
+                st.success(f"📚 You have {total} document(s)")
+                
+                if documents:
+                    for doc in documents:
+                        with st.expander(f"📄 {doc.get('title') or doc.get('original_filename', 'Untitled')} - {doc.get('status', 'unknown')}"):
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.write(f"**Type:** {doc.get('file_type', 'N/A')}")
+                                st.write(f"**Size:** {doc.get('file_size', 0) / 1024:.2f} KB")
+                                st.write(f"**Chunks:** {doc.get('chunks_count', 0)}")
+                            with col2:
+                                st.write(f"**Jurisdiction:** {doc.get('jurisdiction', 'N/A')}")
+                                st.write(f"**Created:** {doc.get('created_at', 'N/A')}")
+                                if doc.get('tags'):
+                                    st.write(f"**Tags:** {doc.get('tags')}")
+                            
+                            if doc.get('description'):
+                                st.write(f"**Description:** {doc.get('description')}")
+                else:
+                    st.info("No documents uploaded yet. Use the upload button to add documents.")
+            else:
+                st.error(f"Failed to load documents: {response.text}")
+        except Exception as e:
+            st.error(f"Error loading documents: {str(e)}")
+        
+        # Upload button
+        st.markdown("---")
+        st.subheader("📤 Upload Document")
+        uploaded_file = st.file_uploader(
+            "Choose a file (PDF, DOCX, TXT)",
+            type=["pdf", "docx", "txt"],
+            help="Upload a legal document to add to your private corpus"
+        )
+        
+        if uploaded_file:
+            col1, col2, col3 = st.columns(3)
+            title = col1.text_input("Title (optional)")
+            jurisdiction = col2.text_input("Jurisdiction", value="UK")
+            tags = col3.text_input("Tags (comma-separated)")
+            
+            if st.button("Upload Document", use_container_width=True):
+                try:
+                    files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+                    data = {}
+                    if title:
+                        data["title"] = title
+                    if jurisdiction:
+                        data["jurisdiction"] = jurisdiction
+                    if tags:
+                        data["tags"] = tags
+                    
+                    headers = self.auth_ui.get_auth_headers()
+                    response = requests.post(
+                        f"{self.api_base_url}/api/v1/documents/upload",
+                        headers=headers,
+                        files=files,
+                        data=data,
+                        timeout=60
+                    )
+                    
+                    if response.status_code == 201:
+                        st.success("✅ Document uploaded successfully!")
+                        st.rerun()
+                    else:
+                        st.error(f"Upload failed: {response.json().get('detail', 'Unknown error')}")
+                except Exception as e:
+                    st.error(f"Upload error: {str(e)}")
+    
+    def _render_settings_interface(self):
+        """Render user settings interface"""
+        st.title("⚙️ Settings")
+        
+        user = self.auth_ui.session_state.user
+        if not user:
+            st.error("User information not available")
+            return
+        
+        # Profile information
+        st.subheader("👤 Profile Information")
+        
+        with st.form("profile_form"):
+            email = st.text_input("Email", value=user.get("email", ""), disabled=True)
+            full_name = st.text_input("Full Name", value=user.get("full_name", ""))
+            username = st.text_input("Username", value=user.get("username", ""))
+            
+            submit = st.form_submit_button("Update Profile", use_container_width=True)
+            
+            if submit:
+                try:
+                    headers = self.auth_ui.get_auth_headers()
+                    response = requests.put(
+                        f"{self.api_base_url}/api/v1/auth/me",
+                        headers=headers,
+                        json={
+                            "full_name": full_name,
+                            "username": username
+                        },
+                        timeout=10
+                    )
+                    
+                    if response.status_code == 200:
+                        updated_user = response.json()
+                        self.auth_ui._store_user(updated_user)
+                        st.success("✅ Profile updated successfully!")
+                        st.rerun()
+                    else:
+                        st.error(f"Update failed: {response.json().get('detail', 'Unknown error')}")
+                except Exception as e:
+                    st.error(f"Update error: {str(e)}")
+        
+        # Change password
+        st.markdown("---")
+        st.subheader("🔒 Change Password")
+        
+        with st.form("password_form"):
+            current_password = st.text_input("Current Password", type="password")
+            new_password = st.text_input("New Password", type="password")
+            confirm_password = st.text_input("Confirm New Password", type="password")
+            
+            submit = st.form_submit_button("Change Password", use_container_width=True)
+            
+            if submit:
+                if new_password != confirm_password:
+                    st.error("New passwords do not match")
+                elif len(new_password) < 8:
+                    st.error("Password must be at least 8 characters")
+                else:
+                    try:
+                        headers = self.auth_ui.get_auth_headers()
+                        response = requests.post(
+                            f"{self.api_base_url}/api/v1/auth/change-password",
+                            headers=headers,
+                            json={
+                                "current_password": current_password,
+                                "new_password": new_password
+                            },
+                            timeout=10
+                        )
+                        
+                        if response.status_code == 200 or response.status_code == 204:
+                            st.success("✅ Password changed successfully!")
+                        else:
+                            st.error(f"Password change failed: {response.json().get('detail', 'Unknown error')}")
+                    except Exception as e:
+                        st.error(f"Password change error: {str(e)}")
     
     def run(self):
-        """Run the Streamlit app"""
+        """Run the Streamlit app with authentication"""
+        # Check for OAuth callback (code in query params)
+        query_params = st.query_params
+        if "code" in query_params:
+            code = query_params.get("code")
+            # Try to get provider from query params or session
+            provider = query_params.get("provider") or self.session_state.get("oauth_provider")
+            
+            if provider and code:
+                if self.auth_ui.handle_oauth_callback(code, provider=provider):
+                    st.success("OAuth login successful!")
+                    time.sleep(1)
+                    # Clear query params
+                    st.query_params.clear()
+                    st.rerun()
+            else:
+                st.warning("OAuth callback received but provider information missing")
+        
+        # Check if user is authenticated
+        if not self.auth_ui.ensure_authenticated():
+            # Show login page
+            self.auth_ui.render_authentication_page()
+            return
+        
+        # Render sidebar and main interface
         mode, top_k = self.render_sidebar()
-        self.render_main_interface(mode, top_k)
+        
+        if mode is None and top_k is None:
+            # Not on chat page, render current page
+            self.render_main_interface()
+        else:
+            # On chat page
+            self.render_main_interface(mode, top_k)
 
 # Run the app
 if __name__ == "__main__":

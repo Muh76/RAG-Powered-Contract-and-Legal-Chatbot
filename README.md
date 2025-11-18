@@ -13,6 +13,7 @@ This project demonstrates end-to-end AI system development with:
 - **Phase 5.1**: ✅ Database setup & migrations - **COMPLETE**
 - **Phase 5.2**: ✅ Route protection with authentication & RBAC - **COMPLETE**
 - **Phase 5.3**: ✅ Document upload system - **COMPLETE**
+- **Phase 5.4**: ✅ Frontend role-based UI with authentication - **COMPLETE**
 - **Phase 5**: 📋 Enterprise features and deployment (in progress)
 
 ### 📊 Phase 2 Status (Advanced RAG) - ✅ **COMPLETE**
@@ -78,7 +79,7 @@ This project demonstrates end-to-end AI system development with:
    ```
 
 4. **Access the UI**
-   - Streamlit UI: http://localhost:8501
+   - Streamlit UI: http://localhost:8501 (Requires authentication - login/register)
    - FastAPI docs: http://localhost:8000/docs (Swagger UI) - Public
    - ReDoc: http://localhost:8000/redoc - Public
    - API Health: http://localhost:8000/api/v1/health - Public (no auth required)
@@ -88,6 +89,8 @@ This project demonstrates end-to-end AI system development with:
    - Hybrid Search API: http://localhost:8000/api/v1/search/hybrid - Auth required
    - Agentic Chat API: http://localhost:8000/api/v1/agentic-chat - Auth required
    - Authentication: http://localhost:8000/api/v1/auth - Register, Login, OAuth
+
+**Note**: The Streamlit frontend now requires authentication. When you first access http://localhost:8501, you'll see a login/register page. Create an account or login to access the chat interface.
 
 5. **Ingest Data (if needed)**
    ```bash
@@ -173,6 +176,47 @@ This project demonstrates end-to-end AI system development with:
   - Hybrid search combines public + private results
   - Metadata tagging (public/private corpus)
   - Source attribution with corpus information
+
+### Phase 5.4: Frontend Role-Based UI - ✅ **COMPLETE**
+- ✅ **Authentication UI Components**
+  - Login/Register forms with validation
+  - Email/password authentication
+  - OAuth integration (Google, GitHub, Microsoft)
+  - Token storage in Streamlit session state
+  - Automatic token refresh handling
+  
+- ✅ **Protected Routes**
+  - Authentication guards for all protected pages
+  - Automatic redirect to login if not authenticated
+  - Role-based access control in UI
+  - Protected pages: Chat, Documents, Settings
+  
+- ✅ **Role-Based UI Rendering**
+  - User profile display in sidebar
+  - Role badges (Admin, Solicitor, Public)
+  - Mode selection based on role:
+    - Public users: Only "public" mode
+    - Solicitor/Admin: Both "solicitor" and "public" modes
+  - Conditional UI elements based on user permissions
+  
+- ✅ **User Management**
+  - User profile display with role badge
+  - Profile update in Settings page
+  - Password change functionality
+  - Logout with token revocation
+  
+- ✅ **Document Management UI**
+  - Document list with metadata
+  - Document upload form (Solicitor/Admin only)
+  - Role-based access warnings
+  - File uploader (PDF, DOCX, TXT)
+  
+- ✅ **Features**
+  - Token expiration tracking (60-second buffer)
+  - Automatic token refresh before expiration
+  - Token refresh on API 401 errors
+  - OAuth callback handling
+  - Error handling and user feedback
 
 **Document Upload Usage:**
 ```bash
@@ -462,6 +506,7 @@ See [Verification Guide](docs/verification_guide.md) for detailed testing instru
 - [Phase 5.1 Authentication Summary](docs/phase5_1_authentication_summary.md)
 - [Phase 5.2 Route Protection](docs/phase5_2_route_protection_complete.md)
 - [Phase 5.3 Document Upload System](docs/phase5_3_document_upload_complete.md)
+- [Phase 5.4 Frontend Role-Based UI](docs/phase5_frontend_auth_complete.md)
 
 ## 🔍 Phase 2 Features in Detail
 
@@ -735,6 +780,12 @@ python scripts/test_route_protection.py
 
 # Test document upload system
 python scripts/test_document_upload.py
+
+# Test frontend authentication components
+python scripts/test_frontend_auth.py
+
+# Test frontend integration (requires API server)
+python scripts/test_frontend_integration.py
 ```
 
 ## 📋 Project Status
@@ -748,6 +799,7 @@ python scripts/test_document_upload.py
   - ✅ Phase 5.1: Database setup & migrations
   - ✅ Phase 5.2: Route protection with authentication & RBAC
   - ✅ Phase 5.3: Document upload system
+  - ✅ Phase 5.4: Frontend role-based UI with authentication
 
 ### Phase 2 Completion Summary
 
