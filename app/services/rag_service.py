@@ -427,7 +427,11 @@ class RAGService:
         # If not, use TF-IDF fallback for keyword-based search
         if self.embedding_gen is None or (hasattr(self.embedding_gen, 'model') and self.embedding_gen.model is None):
             logger.warning("Embedding model not available. Using TF-IDF keyword search fallback.")
-            return self._search_with_tfidf(query, top_k)
+            try:
+                return self._search_with_tfidf(query, top_k)
+            except Exception as tfidf_error:
+                logger.error(f"TF-IDF fallback also failed: {tfidf_error}", exc_info=True)
+                return []
         
         try:
             # Generate query embedding - WRAP IN TRY-CATCH TO PREVENT CRASH

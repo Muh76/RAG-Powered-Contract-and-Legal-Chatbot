@@ -274,33 +274,45 @@ async def chat(
                     legal_jurisdiction="UK"
                 )
             
-            # Extract chunks and metadata
-            chunks = [r.get("text", "") for r in retrieval_result]
-            chunk_metadata = [r.get("metadata", {}) for r in retrieval_result]
+            # Extract chunks and metadata with safe None checks
+            chunks = [r.get("text", "") for r in retrieval_result if isinstance(r, dict)]
+            chunk_metadata = [r.get("metadata", {}) for r in retrieval_result if isinstance(r, dict)]
             
             # Build context from retrieved chunks
             context = "\n\n".join(chunks)
             
-            # Format sources
+            # Format sources with safe None checks
             sources = []
             for i, result in enumerate(retrieval_result):
-                metadata = result.get("metadata", {})
+                if not isinstance(result, dict):
+                    continue
+                    
+                metadata = result.get("metadata", {}) or {}
+                if not isinstance(metadata, dict):
+                    metadata = {}
+                    
                 # Determine if source is from private or public corpus
-                corpus = metadata.get("corpus", "public")
-                source_name = "Private Document" if corpus == "private" else metadata.get("source", "Public Corpus")
+                corpus = metadata.get("corpus", "public") if isinstance(metadata, dict) else "public"
+                source_name = "Private Document" if corpus == "private" else (metadata.get("source", "Public Corpus") if isinstance(metadata, dict) else "Public Corpus")
+                
+                # Safely extract text snippet with None check
+                text_content = result.get("text", "")
+                if not isinstance(text_content, str):
+                    text_content = ""
+                text_snippet = text_content[:200] if text_content else ""
                 
                 sources.append(Source(
                     chunk_id=result.get("chunk_id", f"chunk_{i}"),
-                    title=metadata.get("title", "Unknown") or result.get("title", "Unknown"),
-                    url=metadata.get("url"),  # Optional field
-                    text_snippet=result.get("text", "")[:200],  # Fixed: was "text", should be "text_snippet"
-                    similarity_score=result.get("similarity_score", 0.0),
+                    title=(metadata.get("title") or result.get("title") or "Unknown") if isinstance(metadata, dict) else "Unknown",
+                    url=metadata.get("url") if isinstance(metadata, dict) else None,  # Optional field
+                    text_snippet=text_snippet,
+                    similarity_score=float(result.get("similarity_score", 0.0)),
                     metadata={
                         "corpus": corpus,
-                        "section": metadata.get("section", "Unknown"),
+                        "section": metadata.get("section", "Unknown") if isinstance(metadata, dict) else "Unknown",
                         "source": source_name,
-                        "jurisdiction": metadata.get("jurisdiction", "UK"),
-                        **metadata  # Include all other metadata
+                        "jurisdiction": metadata.get("jurisdiction", "UK") if isinstance(metadata, dict) else "UK",
+                        **(metadata if isinstance(metadata, dict) else {})  # Include all other metadata
                     }
                 ))
             
@@ -320,23 +332,45 @@ async def chat(
             # Determine mode based on user role and request mode
             # If user is admin or solicitor, use solicitor mode; otherwise use public mode
             # Request mode can override if explicitly provided
-            user_mode = "solicitor" if current_user.role.value in ["admin", "solicitor"] else "public"
-            response_mode = request.mode.value if request.mode and request.mode.value in ["solicitor", "public"] else user_mode
-            
-            logger.info(f"Using response mode: {response_mode} (user role: {current_user.role.value}, request mode: {request.mode.value if request.mode else 'not provided'})")
+            try:
+                user_role_value = current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role)
+                user_mode = "solicitor" if user_role_value in ["admin", "solicitor"] else "public"
+                
+                # Safely get request mode value
+                request_mode_value = None
+                if request.mode:
+                    if hasattr(request.mode, 'value'):
+                        request_mode_value = request.mode.value
+                    else:
+                        request_mode_value = str(request.mode)
+                
+                response_mode = request_mode_value if request_mode_value and request_mode_value in ["solicitor", "public"] else user_mode
+                
+                logger.info(f"Using response mode: {response_mode} (user role: {user_role_value}, request mode: {request_mode_value or 'not provided'})")
+            except Exception as mode_error:
+                logger.warning(f"Error determining response mode: {mode_error}, defaulting to public")
+                response_mode = "public"
             
             # CRITICAL: Check retrieval quality BEFORE generation - reject weak matches
-            if retrieval_result:
-                similarity_scores = [r.get("similarity_score", 0.0) for r in retrieval_result if isinstance(r, dict)]
-                if similarity_scores:
-                    avg_similarity = sum(similarity_scores) / len(similarity_scores)
-                    min_similarity = min(similarity_scores)
-                    
-                    # Reject if average similarity is too low - prevents hallucination
-                    # Note: Threshold adjusted for TF-IDF (less accurate than semantic embeddings)
-                    # TF-IDF typically produces lower similarity scores than dense embeddings
-                    similarity_threshold = 0.4  # Lower threshold for TF-IDF embeddings
-                    if avg_similarity < similarity_threshold:
+            avg_similarity = 0.0
+            min_similarity = 0.0
+            
+            if retrieval_result and isinstance(retrieval_result, list) and len(retrieval_result) > 0:
+                similarity_scores = [r.get("similarity_score", 0.0) for r in retrieval_result if isinstance(r, dict) and r.get("similarity_score") is not None]
+                if similarity_scores and len(similarity_scores) > 0:
+                    try:
+                        avg_similarity = sum(similarity_scores) / len(similarity_scores)
+                        min_similarity = min(similarity_scores)
+                    except (ZeroDivisionError, ValueError, TypeError) as e:
+                        logger.warning(f"Error calculating similarity scores: {e}")
+                        avg_similarity = 0.0
+                        min_similarity = 0.0
+                
+                # Reject if average similarity is too low - prevents hallucination
+                # Note: Threshold adjusted for TF-IDF (less accurate than semantic embeddings)
+                # TF-IDF typically produces lower similarity scores than dense embeddings
+                similarity_threshold = 0.4  # Lower threshold for TF-IDF embeddings
+                if avg_similarity > 0 and avg_similarity < similarity_threshold:
                         generation_time_ms = (time.time() - generation_start) * 1000
                         logger.warning(f"Rejecting query due to weak retrieval similarity: {avg_similarity:.3f}")
                         return ChatResponse(
@@ -375,8 +409,9 @@ async def chat(
             generation_time_ms = (time.time() - generation_start) * 1000
             
             # Extract answer from LLM result
-            answer = llm_result.get("answer", "")
-            citation_validation = llm_result.get("citation_validation", {})
+            # Safely extract LLM result with None checks
+            answer = llm_result.get("answer", "") if llm_result and isinstance(llm_result, dict) else ""
+            citation_validation = llm_result.get("citation_validation", {}) if llm_result and isinstance(llm_result, dict) else {}
             
             if not answer:
                 answer = "I couldn't generate a response. Please try again."
@@ -401,22 +436,23 @@ async def chat(
             guardrails_applied = True
             
             # If guardrails failed, reject the answer
-            if not guardrails_result.get("all_passed", False):
-                failures = guardrails_result.get("failures", [])
-                failure_messages = [f["message"] for f in failures]
+            if guardrails_result and not guardrails_result.get("all_passed", False):
+                failures = guardrails_result.get("failures", []) or []
+                failure_messages = [f.get("message", "") for f in failures if isinstance(f, dict)]
                 
                 # If citations are missing, this is critical - reject the answer
-                citation_failure = next((f for f in failures if f["rule"] == "citation_enforcement"), None)
-                if citation_failure:
-                    logger.warning(f"Answer rejected due to missing citations: {citation_failure['message']}")
+                citation_failure = next((f for f in failures if isinstance(f, dict) and f.get("rule") == "citation_enforcement"), None)
+                if citation_failure and isinstance(citation_failure, dict):
+                    citation_msg = citation_failure.get('message', 'Missing citations')
+                    logger.warning(f"Answer rejected due to missing citations: {citation_msg}")
                     return ChatResponse(
-                        answer=f"I cannot provide this answer because it lacks proper citations to legal sources. {citation_failure['message']}. Please regenerate with citations in [1], [2] format.",
+                        answer=f"I cannot provide this answer because it lacks proper citations to legal sources. {citation_msg}. Please regenerate with citations in [1], [2] format.",
                         sources=sources,
                         safety=SafetyReport(
                             is_safe=False,
                             flags=[map_reason_to_safety_flag("missing_citations")],
                             confidence=0.95,
-                            reasoning=f"Guardrails failed: {citation_failure['message']}"
+                            reasoning=f"Guardrails failed: {citation_failure.get('message', 'Missing citations') if isinstance(citation_failure, dict) else 'Missing citations'}"
                         ),
                         metrics=LatencyAndScores(
                             retrieval_time_ms=retrieval_time_ms,
@@ -442,46 +478,63 @@ async def chat(
             # Continue but log the error
         
         # 5. Calculate confidence and relevance scores
-        confidence_score = min(1.0, max(0.0, (
-            sum(r.get("similarity_score", 0.0) for r in retrieval_result) / len(retrieval_result) if retrieval_result else 0.0
-        )))
+        confidence_score = 0.0
+        if retrieval_result and isinstance(retrieval_result, list) and len(retrieval_result) > 0:
+            try:
+                scores = [r.get("similarity_score", 0.0) for r in retrieval_result if isinstance(r, dict)]
+                if scores:
+                    confidence_score = min(1.0, max(0.0, sum(scores) / len(scores)))
+            except Exception as e:
+                logger.warning(f"Error calculating confidence score: {e}")
+                confidence_score = 0.0
         
         # Citation count for metrics
-        citation_count = citation_validation.get("valid_count", citation_validation.get("count", 0)) if citation_validation else 0
+        citation_count = 0
+        if citation_validation and isinstance(citation_validation, dict):
+            citation_count = citation_validation.get("valid_count", citation_validation.get("count", 0))
         
         answer_relevance_score = 0.8  # Could be improved with LLM evaluation
         
         # Log request with user info
-        logger.info(
-            f"Chat request processed: user_id={current_user.id}, "
-            f"user_email={current_user.email}, role={current_user.role.value}, "
-            f"query_length={len(request.query)}, "
-            f"retrieval_time={retrieval_time_ms:.1f}ms, "
-            f"generation_time={generation_time_ms:.1f}ms"
-        )
+        try:
+            user_role_str = current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role)
+            logger.info(
+                f"Chat request processed: user_id={current_user.id}, "
+                f"user_email={current_user.email}, role={user_role_str}, "
+                f"query_length={len(request.query)}, "
+                f"retrieval_time={retrieval_time_ms:.1f}ms, "
+                f"generation_time={generation_time_ms:.1f}ms"
+            )
+        except Exception as log_error:
+            logger.warning(f"Error logging request: {log_error}")
         
         # Determine safety status
         safety_flags = []
         safety_confidence = 1.0
         safety_reasoning = "All safety checks passed"
         
-        if guardrails_result:
+        if guardrails_result and isinstance(guardrails_result, dict):
             if not guardrails_result.get("all_passed", False):
                 safety_confidence = 0.7
                 safety_reasoning = "Some guardrail warnings present"
-                warnings = guardrails_result.get("warnings", [])
-                if warnings:
-                    safety_reasoning += ": " + "; ".join([w["message"] for w in warnings])
+                warnings = guardrails_result.get("warnings", []) or []
+                if warnings and isinstance(warnings, list):
+                    warning_messages = [w.get("message", "") for w in warnings if isinstance(w, dict)]
+                    if warning_messages:
+                        safety_reasoning += ": " + "; ".join(warning_messages)
         
         # Build response with metadata in reasoning field (for now)
         # Include guardrails info in safety reasoning
-        if guardrails_applied and guardrails_result:
+        if guardrails_applied and guardrails_result and isinstance(guardrails_result, dict):
             if guardrails_result.get("all_passed", False):
-                enhanced_reasoning = safety_reasoning + f" | Guardrails: {', '.join(guardrails_result.get('rules_applied', []))}"
+                rules_applied = guardrails_result.get('rules_applied', []) or []
+                rules_str = ', '.join([str(r) for r in rules_applied]) if rules_applied else 'none'
+                enhanced_reasoning = safety_reasoning + f" | Guardrails: {rules_str}"
             else:
-                failures = guardrails_result.get("failures", [])
-                failure_msgs = [f["rule"] for f in failures]
-                enhanced_reasoning = safety_reasoning + f" | Guardrails failed: {', '.join(failure_msgs)}"
+                failures = guardrails_result.get("failures", []) or []
+                failure_msgs = [f.get("rule", "") for f in failures if isinstance(f, dict)]
+                failure_str = ', '.join([f for f in failure_msgs if f]) if failure_msgs else 'unknown'
+                enhanced_reasoning = safety_reasoning + f" | Guardrails failed: {failure_str}"
         else:
             enhanced_reasoning = safety_reasoning + " | Guardrails: Not applied"
         
@@ -503,8 +556,8 @@ async def chat(
             ),
             confidence_score=confidence_score,
             legal_jurisdiction="UK",
-            model_used=llm_result.get("model_used", settings.OPENAI_MODEL) if llm_result else settings.OPENAI_MODEL,
-            response_mode=llm_result.get("mode", response_mode) if llm_result else response_mode,
+            model_used=llm_result.get("model_used", settings.OPENAI_MODEL) if llm_result and isinstance(llm_result, dict) else settings.OPENAI_MODEL,
+            response_mode=llm_result.get("mode", response_mode) if llm_result and isinstance(llm_result, dict) else response_mode,
             citation_validation=citation_validation,
             guardrails_applied=guardrails_applied,
             guardrails_result=guardrails_result

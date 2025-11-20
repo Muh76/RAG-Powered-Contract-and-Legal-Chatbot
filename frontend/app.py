@@ -72,7 +72,7 @@ class LegalChatbotUI:
                     "top_k": top_k
                 },
                 headers=headers,
-                timeout=30
+                timeout=60
             )
             
             if response.status_code == 200:
@@ -89,7 +89,7 @@ class LegalChatbotUI:
                             "top_k": top_k
                         },
                         headers=headers,
-                        timeout=30
+                        timeout=60
                     )
                     if response.status_code == 200:
                         return response.json()
