@@ -165,6 +165,90 @@ class UKLegislationLoader(BaseLoader):
         return chunks
 
 
+class JSONLoader(BaseLoader):
+    """JSON document loader for UK legislation and structured legal documents"""
+    
+    def load_documents(self, file_path: str) -> List[DocumentChunk]:
+        """Load JSON documents and return chunks"""
+        chunks = []
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as file:
+                data = json.load(file)
+                
+                # Handle UK legislation JSON format
+                if 'content' in data:
+                    title = data.get('title', Path(file_path).stem)
+                    url = data.get('url')
+                    content = data.get('content', '')
+                    sections = data.get('sections', [])
+                    
+                    # Split content by sections if available
+                    if sections:
+                        # Split content into sections
+                        section_texts = content.split('\n\n')
+                        for idx, (section, section_text) in enumerate(zip(sections, section_texts)):
+                            if section_text.strip():
+                                chunk = DocumentChunk(
+                                    chunk_id=f"json_{Path(file_path).stem}_section_{idx}",
+                                    text=section_text.strip(),
+                                    metadata=DocumentMetadata(
+                                        title=title,
+                                        source="UK Legislation",
+                                        jurisdiction="UK",
+                                        document_type="Legislation",
+                                        url=url,
+                                        section=section if isinstance(section, str) else str(section)
+                                    ),
+                                    chunk_index=idx,
+                                    start_char=0,
+                                    end_char=len(section_text)
+                                )
+                                chunks.append(chunk)
+                    else:
+                        # Single chunk for entire content
+                        if content.strip():
+                            chunk = DocumentChunk(
+                                chunk_id=f"json_{Path(file_path).stem}",
+                                text=content.strip(),
+                                metadata=DocumentMetadata(
+                                    title=title,
+                                    source="UK Legislation",
+                                    jurisdiction="UK",
+                                    document_type="Legislation",
+                                    url=url
+                                ),
+                                chunk_index=0,
+                                start_char=0,
+                                end_char=len(content)
+                            )
+                            chunks.append(chunk)
+                else:
+                    # Generic JSON - convert to text
+                    text = json.dumps(data, indent=2)
+                    if text.strip():
+                        chunk = DocumentChunk(
+                            chunk_id=f"json_{Path(file_path).stem}",
+                            text=text.strip(),
+                            metadata=DocumentMetadata(
+                                title=Path(file_path).stem,
+                                source="JSON",
+                                jurisdiction="UK",
+                                document_type="JSON",
+                                file_path=file_path
+                            ),
+                            chunk_index=0,
+                            start_char=0,
+                            end_char=len(text)
+                        )
+                        chunks.append(chunk)
+                        
+        except Exception as e:
+            logger.error(f"Error loading JSON file {file_path}: {e}")
+            
+        return chunks
+
+
 class DocumentLoaderFactory:
     """Factory for creating document loaders"""
     
@@ -177,6 +261,8 @@ class DocumentLoaderFactory:
             return PDFLoader()
         elif extension in ['.txt', '.md']:
             return TextLoader()
+        elif extension == '.json':
+            return JSONLoader()
         else:
             raise ValueError(f"Unsupported file type: {extension}")
 

@@ -215,21 +215,40 @@ class RAGService:
         Returns:
             List of result dictionaries
         """
+        logger.info(f"🔍 Starting search for query: '{query[:50]}...' (top_k={top_k})")
+        
+        # Check service state
+        if self.faiss_index is None:
+            logger.error("❌ FAISS index is None - search cannot proceed")
+            return []
+        if len(self.chunk_metadata) == 0:
+            logger.error("❌ No chunk metadata available - search cannot proceed")
+            return []
+        
+        logger.info(f"📊 Service state: FAISS index has {self.faiss_index.ntotal} vectors, {len(self.chunk_metadata)} chunks")
+        
         # Determine if we should use hybrid search
         use_hybrid_search = use_hybrid if use_hybrid is not None else self.use_hybrid
         
         # Get public corpus results
         if use_hybrid_search and self.hybrid_retriever:
+            logger.info("🔀 Using hybrid search")
             public_results = self._hybrid_search(query, top_k, fusion_strategy, metadata_filter)
         else:
             # Fall back to original semantic search (backward compatible)
+            logger.info("🔎 Using semantic search")
             public_results = self._semantic_search(query, top_k)
+        
+        logger.info(f"📋 Public corpus returned {len(public_results)} results")
         
         # Combine with private corpus if requested
         if include_private_corpus and user_id and private_corpus_results:
+            logger.info(f"🔗 Combining with {len(private_corpus_results)} private corpus results")
             combined_results = self._combine_results(public_results, private_corpus_results, top_k)
         else:
             combined_results = public_results
+        
+        logger.info(f"✅ Final search returned {len(combined_results)} results")
         
         # Add explainability if requested
         if include_explanation or highlight_sources:
@@ -488,6 +507,8 @@ class RAGService:
             # Format results
             results = []
             try:
+                logger.debug(f"FAISS search returned {len(scores[0])} scores, {len(indices[0])} indices")
+                valid_results = 0
                 for score, idx in zip(scores[0], indices[0]):
                     if idx < len(self.chunk_metadata) and idx >= 0:
                         chunk_data = self.chunk_metadata[idx]
@@ -503,6 +524,13 @@ class RAGService:
                             "similarity_score": score_value,
                             "section": chunk_data.get("metadata", {}).get("section", "Unknown")
                         })
+                        valid_results += 1
+                    else:
+                        logger.warning(f"Invalid index {idx} (metadata length: {len(self.chunk_metadata)})")
+                
+                logger.info(f"✅ Formatted {valid_results} valid results from FAISS search")
+                if valid_results == 0:
+                    logger.warning("⚠️ No valid results after formatting - all indices were invalid")
             except Exception as format_error:
                 logger.error(f"Error formatting results: {format_error}", exc_info=True)
                 return []

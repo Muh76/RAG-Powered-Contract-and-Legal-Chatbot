@@ -188,7 +188,7 @@ class HealthChecker:
                 start_time = time.time()
                 # Simple API key validation by checking models endpoint
                 client = openai.OpenAI(api_key=settings.OPENAI_API_KEY, timeout=10)
-                client.models.list(limit=1)  # Minimal check
+                list(client.models.list())  # Minimal check - list() doesn't accept limit parameter
                 response_time = (time.time() - start_time) * 1000
                 
                 result = {

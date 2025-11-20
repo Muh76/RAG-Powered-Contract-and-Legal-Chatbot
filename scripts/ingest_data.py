@@ -80,11 +80,39 @@ Personal data shall be collected for specified, explicit and legitimate purposes
             print(f"✅ Created sample file: {sample_file}")
         
         documents = []
+        
+        # Load .txt files from data/raw
         for file_path in data_dir.glob("*.txt"):
             print(f"📄 Loading: {file_path.name}")
-            loader = DocumentLoaderFactory.get_loader(str(file_path))
-            chunks = loader.load_documents(str(file_path))
-            documents.extend(chunks)
+            try:
+                loader = DocumentLoaderFactory.get_loader(str(file_path))
+                chunks = loader.load_documents(str(file_path))
+                documents.extend(chunks)
+            except Exception as e:
+                print(f"⚠️ Error loading {file_path.name}: {e}")
+        
+        # Load JSON files from data/uk_legislation
+        uk_legislation_dir = project_root / "data" / "uk_legislation"
+        if uk_legislation_dir.exists():
+            print(f"\n📚 Loading UK Legislation files from {uk_legislation_dir}")
+            for file_path in uk_legislation_dir.glob("*.json"):
+                print(f"📄 Loading: {file_path.name}")
+                try:
+                    loader = DocumentLoaderFactory.get_loader(str(file_path))
+                    chunks = loader.load_documents(str(file_path))
+                    documents.extend(chunks)
+                    print(f"   ✅ Loaded {len(chunks)} chunks from {file_path.name}")
+                except Exception as e:
+                    print(f"⚠️ Error loading {file_path.name}: {e}")
+        else:
+            print(f"⚠️ UK legislation directory not found: {uk_legislation_dir}")
+        
+        # TODO: Load CUAD dataset (parquet files) - requires additional implementation
+        cuad_dir = project_root / "data" / "cuad" / "data"
+        if cuad_dir.exists():
+            print(f"\n📚 CUAD dataset found at {cuad_dir}")
+            print(f"   ⚠️ CUAD dataset loading not yet implemented - skipping for now")
+            print(f"   💡 Tip: Convert CUAD parquet files to JSON or TXT format for ingestion")
         
         print(f"✅ Loaded {len(documents)} documents")
         

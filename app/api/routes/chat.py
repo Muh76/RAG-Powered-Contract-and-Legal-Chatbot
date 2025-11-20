@@ -247,34 +247,41 @@ async def chat(
                 detail=f"Retrieval error: {str(e)}"
             )
         
-        # 3. Generate answer using LLM
+        # 3. Generate answer using LLM with role-based mode
         generation_start = time.time()
         try:
             llm = get_llm_service()
             
-            # Build prompt with context
-            prompt = f"""You are a legal assistant specializing in UK law. Answer the following question based on the provided legal context.
-
-Context:
-{context}
-
-Question: {request.query}
-
-Provide a clear, accurate, and concise answer based on the context. If the context doesn't contain enough information, say so. Cite relevant sections or sources when possible.
-
-Answer:"""
+            # Determine mode based on user role and request mode
+            # If user is admin or solicitor, use solicitor mode; otherwise use public mode
+            # Request mode can override if explicitly provided
+            user_mode = "solicitor" if current_user.role.value in ["admin", "solicitor"] else "public"
+            response_mode = request.mode.value if request.mode and request.mode.value in ["solicitor", "public"] else user_mode
             
-            # Run LLM generation in executor to avoid blocking
+            logger.info(f"Using response mode: {response_mode} (user role: {current_user.role.value}, request mode: {request.mode.value if request.mode else 'not provided'})")
+            
+            # Use generate_legal_answer for proper mode-based responses with citations
             loop = asyncio.get_event_loop()
-            answer = await loop.run_in_executor(
+            llm_result = await loop.run_in_executor(
                 _executor,
-                lambda: llm.generate(prompt, max_tokens=500)
+                lambda: llm.generate_legal_answer(
+                    query=request.query,
+                    retrieved_chunks=retrieval_result,
+                    mode=response_mode
+                )
             )
             
             generation_time_ms = (time.time() - generation_start) * 1000
             
+            # Extract answer from LLM result
+            answer = llm_result.get("answer", "")
+            
             if not answer:
                 answer = "I couldn't generate a response. Please try again."
+            
+            # Update sources with citation validation if available
+            if "citation_validation" in llm_result:
+                logger.debug(f"Citation validation: {llm_result['citation_validation']}")
             
         except Exception as e:
             logger.error(f"LLM generation error: {e}", exc_info=True)
