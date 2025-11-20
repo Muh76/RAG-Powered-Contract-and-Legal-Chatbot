@@ -32,16 +32,21 @@ def serialize_log(record: Dict[str, Any]) -> str:
     }
     
     # Add exception info if present
-    if "exception" in record:
+    if "exception" in record and record["exception"] is not None and isinstance(record["exception"], dict):
         log_data["exception"] = {
-            "type": record["exception"]["type"],
-            "value": str(record["exception"]["value"]),
-            "traceback": record["exception"]["traceback"],
+            "type": record["exception"].get("type", "Unknown"),
+            "value": str(record["exception"].get("value", "")),
+            "traceback": record["exception"].get("traceback", ""),
         }
     
-    # Add extra fields if present
-    if "extra" in record:
-        log_data.update(record["extra"])
+    # Add extra fields if present (handle nested extra)
+    if "extra" in record and record["extra"]:
+        extra_data = record["extra"]
+        # Handle nested "extra" key
+        if isinstance(extra_data, dict) and "extra" in extra_data:
+            log_data.update(extra_data["extra"])
+        else:
+            log_data.update(extra_data)
     
     return json.dumps(log_data, default=str)
 
