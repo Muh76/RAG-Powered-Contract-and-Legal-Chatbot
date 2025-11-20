@@ -246,13 +246,16 @@ class GuardrailsService:
             min_similarity = min(similarity_scores) if similarity_scores else 0.0
             
             # Require minimum similarity threshold - reject weak matches
-            if avg_similarity < 0.5 or min_similarity < 0.3:
+            # Note: Threshold adjusted for TF-IDF embeddings (typically produce lower scores)
+            avg_threshold = 0.4  # Lower threshold for TF-IDF
+            min_threshold = 0.25  # Lower minimum for TF-IDF
+            if avg_similarity < avg_threshold or min_similarity < min_threshold:
                 return {
                     "valid": False,
                     "reason": "weak_grounding",
                     "avg_similarity": avg_similarity,
                     "min_similarity": min_similarity,
-                    "message": f"Retrieved sources have weak similarity (avg: {avg_similarity:.3f}, min: {min_similarity:.3f}). Answer may contain hallucinated content. Minimum required: avg 0.5, min 0.3."
+                    "message": f"Retrieved sources have weak similarity (avg: {avg_similarity:.3f}, min: {min_similarity:.3f}). Answer may contain hallucinated content. Minimum required: avg {avg_threshold}, min {min_threshold}."
                 }
         
         # Extract key phrases from answer
@@ -418,15 +421,18 @@ class GuardrailsService:
             min_similarity = min(similarity_scores)
             
             # STRICT: Require minimum similarity - reject weak matches
-            if avg_similarity < 0.5:
+            # Note: Threshold adjusted for TF-IDF embeddings (typically produce lower scores)
+            avg_threshold = 0.4  # Lower threshold for TF-IDF
+            min_threshold = 0.25  # Lower minimum for TF-IDF
+            if avg_similarity < avg_threshold:
                 results["all_passed"] = False
                 results["failures"].append({
                     "rule": "grounding_validation",
                     "reason": "weak_similarity",
                     "avg_similarity": avg_similarity,
-                    "message": f"Average similarity ({avg_similarity:.3f}) is too low. Retrieved sources may not be relevant. Minimum required: 0.5"
+                    "message": f"Average similarity ({avg_similarity:.3f}) is too low. Retrieved sources may not be relevant. Minimum required: {avg_threshold}"
                 })
-            elif min_similarity < 0.3:
+            elif min_similarity < min_threshold:
                 results["warnings"].append({
                     "rule": "grounding_validation",
                     "message": f"Some sources have very low similarity (min: {min_similarity:.3f}). Answer may be unreliable."

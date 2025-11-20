@@ -332,7 +332,10 @@ async def chat(
                     min_similarity = min(similarity_scores)
                     
                     # Reject if average similarity is too low - prevents hallucination
-                    if avg_similarity < 0.5:
+                    # Note: Threshold adjusted for TF-IDF (less accurate than semantic embeddings)
+                    # TF-IDF typically produces lower similarity scores than dense embeddings
+                    similarity_threshold = 0.4  # Lower threshold for TF-IDF embeddings
+                    if avg_similarity < similarity_threshold:
                         generation_time_ms = (time.time() - generation_start) * 1000
                         logger.warning(f"Rejecting query due to weak retrieval similarity: {avg_similarity:.3f}")
                         return ChatResponse(

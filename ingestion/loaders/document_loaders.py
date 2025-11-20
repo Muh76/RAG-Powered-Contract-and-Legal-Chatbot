@@ -186,58 +186,76 @@ class JSONLoader(BaseLoader):
                     act_name = title
                     
                     # Parse content to extract sections properly
-                    # UK legislation format: "1. Section title", "Section 1", "Part I", etc.
+                    # UK legislation format: "1. Section title", "Section 1", etc.
+                    # IMPORTANT: Skip "Part X" - these are organizational divisions, not sections
                     import re
                     
-                    # Pattern to find section markers - match section numbers followed by periods
-                    # Examples: "1. ", "Section 1", "1A. ", "Part I ", "PART 2A ", etc.
-                    # Also match section references like "Sections 17-22" or "Section 13"
-                    section_pattern = r'(?:Section|S\.|S)\s+(\d+[A-Za-z]?)[\.:]\s+|(?<!\d)(\d+[A-Za-z]?)[\.]\s+|(?:Part|PART)\s+([IVX]+|\d+[A-Za-z]?)\s+'
+                    # Pattern to find actual section markers - ONLY match section numbers
+                    # Match: "1. ", "2. ", "Section 1", "1A. ", etc.
+                    # DO NOT match: "Part V", "Part I" - these are not sections
+                    # Use word boundaries to avoid matching in middle of text
+                    section_pattern = r'\b(?:(?:Section|S\.|S)\s+)?(\d+[A-Za-z]?)[\.]\s+(?=[A-Z])'
                     
                     # Split content by section markers
-                    section_matches = list(re.finditer(section_pattern, content, re.IGNORECASE | re.MULTILINE))
+                    section_matches = list(re.finditer(section_pattern, content, re.IGNORECASE))
                     
                     if section_matches:
-                        # Create chunks for each section
-                        for i, match in enumerate(section_matches):
-                            start_pos = match.start()
-                            end_pos = section_matches[i + 1].start() if i + 1 < len(section_matches) else len(content)
-                            
-                            section_text = content[start_pos:end_pos].strip()
-                            if not section_text or len(section_text) < 50:  # Skip very short sections
-                                continue
-                            
-                            # Extract section number from match
-                            section_num = match.group(1) or match.group(2) or match.group(3) or match.group(4)
+                        # Filter valid sections - must be actual section headers (start with capital after number)
+                        valid_sections = []
+                        for match in section_matches:
+                            section_num = match.group(1)
                             if not section_num:
                                 continue
                             
-                            # Skip "Section 0" - doesn't exist
-                            if section_num == "0" or section_num == "0A":
+                            # Skip section 0 - doesn't exist in UK legislation
+                            if section_num == "0":
                                 continue
                             
-                            # Extract section title (first line or first sentence)
-                            section_title = section_text.split('\n')[0].strip()[:100]
-                            if not section_title:
+                            # Verify this is a section header, not a reference
+                            start = match.end()
+                            if start < len(content):
+                                # Check next 50 chars to verify it's a section header
+                                next_text = content[start:start+50].strip()
+                                # Section headers usually start with capital letter and have descriptive text
+                                if next_text and (next_text[0].isupper() or next_text[0].isdigit()):
+                                    # Verify it's not just a number (could be subsection)
+                                    if len(next_text.split()) > 1:  # Has multiple words
+                                        valid_sections.append((match.start(), match.end(), section_num))
+                        
+                        if valid_sections:
+                            # Create chunks for each valid section
+                            for i, (start_pos, _, section_num) in enumerate(valid_sections):
+                                end_pos = valid_sections[i + 1][0] if i + 1 < len(valid_sections) else len(content)
+                                
+                                section_text = content[start_pos:end_pos].strip()
+                                if not section_text or len(section_text) < 50:  # Skip very short sections
+                                    continue
+                                
+                                # Extract section title (first sentence or first 100 chars)
                                 section_title = section_text.split('.')[0].strip()[:100]
-                            
-                            # Create chunk with proper section metadata
-                            chunk = DocumentChunk(
-                                chunk_id=f"json_{Path(file_path).stem}_s{section_num}",
-                                text=section_text,
-                                metadata=DocumentMetadata(
-                                    title=f"{act_name} - Section {section_num}",
-                                    source=act_name,  # Use Act name as source
-                                    jurisdiction="UK",
-                                    document_type="Legislation",
-                                    url=url,
-                                    section=f"Section {section_num}"  # Proper section identifier
-                                ),
-                                chunk_index=int(re.findall(r'\d+', section_num)[0]) if re.findall(r'\d+', section_num) else i,
-                                start_char=start_pos,
-                                end_char=end_pos
-                            )
-                            chunks.append(chunk)
+                                if not section_title:
+                                    section_title = f"Section {section_num}"
+                                
+                                # Clean section title - remove section number prefix if present
+                                section_title = re.sub(r'^' + re.escape(section_num) + r'[\.]\s*', '', section_title)
+                                
+                                # Create chunk with proper section metadata
+                                chunk = DocumentChunk(
+                                    chunk_id=f"json_{Path(file_path).stem}_s{section_num}",
+                                    text=section_text,
+                                    metadata=DocumentMetadata(
+                                        title=f"{act_name} - Section {section_num}",
+                                        source=act_name,  # Use Act name as source
+                                        jurisdiction="UK",
+                                        document_type="Legislation",
+                                        url=url,
+                                        section=f"Section {section_num}"  # Proper section identifier
+                                    ),
+                                    chunk_index=int(re.findall(r'\d+', section_num)[0]) if re.findall(r'\d+', section_num) else i,
+                                    start_char=start_pos,
+                                    end_char=end_pos
+                                )
+                                chunks.append(chunk)
                     else:
                         # If no sections found, chunk by paragraphs (fallback)
                         paragraphs = content.split('\n\n')
