@@ -13,6 +13,7 @@ from app.auth.dependencies import get_current_active_user
 from app.auth.models import User
 from app.documents.service import DocumentService
 from app.core.database import get_db
+from app.core.config import settings
 from sqlalchemy.orm import Session
 from datetime import datetime
 import time
