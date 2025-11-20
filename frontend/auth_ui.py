@@ -97,27 +97,47 @@ class AuthUI:
             )
             
             if response.status_code == 200:
-                token_data = response.json()
-                self._store_tokens(token_data)
+                try:
+                    token_data = response.json()
+                    self._store_tokens(token_data)
+                except (ValueError, requests.exceptions.JSONDecodeError) as e:
+                    return False, f"Invalid response from server: {str(e)}"
                 
                 # Fetch user profile
-                user_response = requests.get(
-                    f"{self.api_base_url}/api/v1/auth/me",
-                    headers=self.get_auth_headers(),
-                    timeout=10
-                )
-                
-                if user_response.status_code == 200:
-                    user_data = user_response.json()
-                    self._store_user(user_data)
-                    return True, None
-                else:
+                try:
+                    user_response = requests.get(
+                        f"{self.api_base_url}/api/v1/auth/me",
+                        headers=self.get_auth_headers(),
+                        timeout=10
+                    )
+                    
+                    if user_response.status_code == 200:
+                        user_data = user_response.json()
+                        self._store_user(user_data)
+                        return True, None
+                    else:
+                        # Tokens stored but couldn't fetch user - still success
+                        return True, "Logged in but couldn't fetch user profile"
+                except Exception as e:
                     # Tokens stored but couldn't fetch user - still success
                     return True, "Logged in but couldn't fetch user profile"
             else:
-                error_detail = response.json().get("detail", "Login failed")
+                # Handle error response
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get("detail", "Login failed")
+                except (ValueError, requests.exceptions.JSONDecodeError):
+                    # Response is not JSON, use status text
+                    error_detail = f"Login failed: {response.status_code} {response.reason}"
+                    if response.text:
+                        error_detail += f" - {response.text[:200]}"
+                
                 return False, error_detail
                 
+        except requests.exceptions.Timeout:
+            return False, "Connection timeout: Server took too long to respond"
+        except requests.exceptions.ConnectionError:
+            return False, "Connection error: Could not connect to server"
         except requests.exceptions.RequestException as e:
             return False, f"Connection error: {str(e)}"
         except Exception as e:

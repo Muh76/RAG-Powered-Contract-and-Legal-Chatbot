@@ -57,25 +57,41 @@ class AuthService:
     @staticmethod
     def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
         """Authenticate user with email and password"""
-        user = db.query(User).filter(User.email == email).first()
-        
-        if not user:
+        try:
+            user = db.query(User).filter(User.email == email).first()
+            
+            if not user:
+                return None
+            
+            if not user.hashed_password:
+                raise AuthenticationError("Password authentication not available. Please use OAuth.")
+            
+            # Verify password with error handling
+            try:
+                if not verify_password(password, user.hashed_password):
+                    return None
+            except Exception as e:
+                # Log password verification errors but don't expose details
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Password verification error for user {email}: {e}")
+                return None
+            
+            if not user.is_active:
+                raise AuthenticationError("User account is inactive")
+            
+            # Update last login
+            user.last_login = datetime.utcnow()
+            db.commit()
+            
+            return user
+        except AuthenticationError:
+            raise
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Authentication error: {e}", exc_info=True)
             return None
-        
-        if not user.hashed_password:
-            raise AuthenticationError("Password authentication not available. Please use OAuth.")
-        
-        if not verify_password(password, user.hashed_password):
-            return None
-        
-        if not user.is_active:
-            raise AuthenticationError("User account is inactive")
-        
-        # Update last login
-        user.last_login = datetime.utcnow()
-        db.commit()
-        
-        return user
     
     @staticmethod
     def get_user_by_id(db: Session, user_id: int) -> Optional[User]:

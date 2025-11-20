@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import Optional
+import logging
 
 from app.auth.service import AuthService
 from app.auth.schemas import (
@@ -35,17 +36,33 @@ async def register(user_data: UserCreate, db: Session = Depends(get_db)):
 @router.post("/login", response_model=Token)
 async def login(login_data: LoginRequest, db: Session = Depends(get_db)):
     """Login with email and password"""
-    user = AuthService.authenticate_user(db, login_data.email, login_data.password)
-    
-    if not user:
+    try:
+        user = AuthService.authenticate_user(db, login_data.email, login_data.password)
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        tokens = AuthService.create_tokens(user, db)
+        return tokens
+    except HTTPException:
+        raise
+    except AuthenticationError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail=str(e),
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    tokens = AuthService.create_tokens(user, db)
-    return tokens
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.error(f"Login error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Login failed: {str(e)}"
+        )
 
 
 @router.post("/refresh", response_model=Token)

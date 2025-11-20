@@ -9,17 +9,131 @@ from app.auth.schemas import TokenData, UserRole
 from app.core.errors import AuthenticationError
 
 # Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Use bcrypt with workaround for detection issues
+import os
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Try to disable wrap bug detection
+os.environ.setdefault("PASSLIB_WRAP_BUG_DETECTION", "0")
+
+# Monkey-patch to avoid wrap bug detection issues
+try:
+    import passlib.handlers.bcrypt as bcrypt_module
+    original_detect_wrap_bug = bcrypt_module.detect_wrap_bug
+    def patched_detect_wrap_bug(ident):
+        # Skip wrap bug detection to avoid 72-byte limit issues
+        return False
+    bcrypt_module.detect_wrap_bug = patched_detect_wrap_bug
+except Exception:
+    pass  # If patching fails, continue anyway
+
+try:
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+except Exception as e:
+    logger.warning(f"Failed to initialize bcrypt context: {e}, trying alternative")
+    try:
+        # Try with explicit bcrypt backend and no auto-detection
+        pwd_context = CryptContext(schemes=["bcrypt"], bcrypt__ident="2b", bcrypt__rounds=12)
+    except Exception as e2:
+        logger.error(f"Could not initialize password context: {e2}")
+        pwd_context = None
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash"""
-    return pwd_context.verify(plain_password, hashed_password)
+    if not plain_password or not hashed_password:
+        return False
+    
+    # Handle bcrypt's 72-byte limit by truncating before verification
+    if isinstance(plain_password, str):
+        password_bytes = plain_password.encode('utf-8')
+        if len(password_bytes) > 72:
+            # Truncate to 72 bytes, then decode back to string
+            plain_password = password_bytes[:72].decode('utf-8', errors='ignore')
+    
+    if pwd_context is None:
+        # Fallback to direct bcrypt
+        try:
+            import bcrypt
+            password_bytes = plain_password.encode('utf-8')[:72]
+            hashed_bytes = hashed_password.encode('utf-8') if isinstance(hashed_password, str) else hashed_password
+            return bcrypt.checkpw(password_bytes, hashed_bytes)
+        except (ImportError, Exception) as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Password verification failed: {e}")
+            return False
+    
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except ValueError as e:
+        # Handle bcrypt-specific errors - try direct bcrypt
+        if "72 bytes" in str(e):
+            try:
+                import bcrypt
+                password_bytes = plain_password.encode('utf-8')[:72]
+                hashed_bytes = hashed_password.encode('utf-8') if isinstance(hashed_password, str) else hashed_password
+                return bcrypt.checkpw(password_bytes, hashed_bytes)
+            except (ImportError, Exception):
+                return False
+        return False
+    except (TypeError, Exception) as e:
+        # Fallback to direct bcrypt if passlib fails
+        try:
+            import bcrypt
+            password_bytes = plain_password.encode('utf-8')[:72]
+            hashed_bytes = hashed_password.encode('utf-8') if isinstance(hashed_password, str) else hashed_password
+            return bcrypt.checkpw(password_bytes, hashed_bytes)
+        except (ImportError, Exception):
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Password verification error: {e}")
+            return False
 
 
 def get_password_hash(password: str) -> str:
     """Hash a password"""
-    return pwd_context.hash(password)
+    if not password:
+        raise ValueError("Password cannot be empty")
+    
+    # Handle bcrypt's 72-byte limit by truncating before hashing
+    if isinstance(password, str):
+        password_bytes = password.encode('utf-8')
+        if len(password_bytes) > 72:
+            # Truncate to 72 bytes, then decode back to string
+            password = password_bytes[:72].decode('utf-8', errors='ignore')
+    
+    if pwd_context is None:
+        raise RuntimeError("Password context not initialized")
+    
+    try:
+        return pwd_context.hash(password)
+    except ValueError as e:
+        # Handle bcrypt-specific errors
+        error_str = str(e)
+        if "72 bytes" in error_str:
+            # Already truncated, try with bytes directly
+            try:
+                import bcrypt
+                password_bytes = password.encode('utf-8')[:72]
+                salt = bcrypt.gensalt()
+                hashed = bcrypt.hashpw(password_bytes, salt)
+                return hashed.decode('utf-8')
+            except ImportError:
+                raise ValueError("Password is too long (max 72 bytes) and bcrypt not available")
+        raise
+    except Exception as e:
+        # Fallback to direct bcrypt if passlib fails
+        try:
+            import bcrypt
+            password_bytes = password.encode('utf-8')[:72]
+            salt = bcrypt.gensalt()
+            hashed = bcrypt.hashpw(password_bytes, salt)
+            return hashed.decode('utf-8')
+        except ImportError:
+            raise RuntimeError(f"Password hashing failed: {e}")
 
 
 def create_access_token(
