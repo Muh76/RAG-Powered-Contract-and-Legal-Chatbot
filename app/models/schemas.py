@@ -66,6 +66,11 @@ class ChatResponse(BaseModel):
     confidence_score: float = Field(ge=0.0, le=1.0)
     legal_jurisdiction: str = "UK"
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+    model_used: Optional[str] = None
+    response_mode: Optional[str] = None
+    citation_validation: Optional[Dict[str, Any]] = None
+    guardrails_applied: bool = False
+    guardrails_result: Optional[Dict[str, Any]] = None
 
 
 class DocumentUploadRequest(BaseModel):

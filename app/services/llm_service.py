@@ -78,7 +78,7 @@ class LLMService:
 4. Use precise legal terminology and cite specific sections/Acts
 5. MANDATORY: Cite EVERY sentence with simple [source_id] format ONLY (e.g., [1], [2]) - NO complex formats like [3, Section X]
 6. Each factual claim MUST have a citation - uncited claims are FORBIDDEN
-7. If sources are insufficient, state: "The provided sources do not contain sufficient information to answer this question completely"
+7. Answer using whatever information IS available in the sources - even if incomplete. Only say "The provided sources do not contain sufficient information..." if sources are completely empty or irrelevant
 8. Include Act name and Section number when explicitly mentioned in source metadata
 9. Maintain professional legal language
 10. DO NOT create fictional sections, Act names, or legal provisions"""
@@ -90,7 +90,7 @@ class LLMService:
 4. Explain legal concepts clearly without jargon
 5. MANDATORY: Cite EVERY sentence with simple [source_id] format ONLY (e.g., [1], [2]) - NO complex formats like [3, Section X]
 6. Each factual claim MUST have a citation - uncited claims are FORBIDDEN
-7. If sources are insufficient, state: "The provided sources do not contain sufficient information to answer this question completely"
+7. Answer using whatever information IS available in the sources - even if incomplete. Only say "The provided sources do not contain sufficient information..." if sources are completely empty or irrelevant
 8. Include Act name and Section number when explicitly mentioned in source metadata
 9. Use accessible, everyday language
 10. DO NOT create fictional sections, Act names, or legal provisions"""
@@ -110,7 +110,7 @@ STRICT ANTI-HALLUCINATION INSTRUCTIONS:
 4. DO NOT make any claims without citations - this will cause rejection
 5. If a source explicitly mentions an Act name and Section number, you may include it: "Employment Rights Act 1996, Section 1 [1]"
 6. DO NOT invent section numbers, Act names, or legal provisions not in the sources
-7. If sources don't contain enough information, say EXACTLY: "The provided sources do not contain sufficient information to answer this question completely"
+7. Answer using whatever information IS in the sources - even if partial. Only use "The provided sources do not contain sufficient information..." if sources are completely empty or irrelevant. Otherwise, provide the best answer possible from available sources
 8. DO NOT expand on topics not covered in the sources - keep your answer proportional to source material
 
 EXAMPLE GOOD RESPONSE (when sources are short):

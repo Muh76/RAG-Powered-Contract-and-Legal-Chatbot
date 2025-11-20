@@ -355,7 +355,9 @@ async def chat(
                                 answer_relevance_score=0.0
                             ),
                             confidence_score=avg_similarity,
-                            legal_jurisdiction="UK"
+                            legal_jurisdiction="UK",
+                            model_used=settings.OPENAI_MODEL,
+                            response_mode=response_mode
                         )
             
             # Use generate_legal_answer for proper mode-based responses with citations
@@ -423,7 +425,9 @@ async def chat(
                             answer_relevance_score=0.0
                         ),
                         confidence_score=0.0,
-                        legal_jurisdiction="UK"
+                        legal_jurisdiction="UK",
+                        model_used=settings.OPENAI_MODEL,
+                        response_mode=response_mode
                     )
                 
                 # Other failures - log but allow with warning
@@ -497,7 +501,12 @@ async def chat(
                 answer_relevance_score=answer_relevance_score
             ),
             confidence_score=confidence_score,
-            legal_jurisdiction="UK"
+            legal_jurisdiction="UK",
+            model_used=llm_result.get("model_used", settings.OPENAI_MODEL) if llm_result else settings.OPENAI_MODEL,
+            response_mode=llm_result.get("mode", response_mode) if llm_result else response_mode,
+            citation_validation=citation_validation,
+            guardrails_applied=guardrails_applied,
+            guardrails_result=guardrails_result
         )
         
         # Store metadata in response object for frontend access
