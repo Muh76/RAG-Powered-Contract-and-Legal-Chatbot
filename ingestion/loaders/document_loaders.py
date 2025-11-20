@@ -343,28 +343,73 @@ class CUADLoader(BaseLoader):
             logger.info(f"Loading CUAD dataset: {len(df)} contracts from {Path(file_path).name}")
             
             # Process each contract
+            # Limit processing to avoid memory issues - process first 1000 contracts
+            max_contracts = 1000
+            contracts_processed = 0
+            
             for idx, row in df.iterrows():
+                if contracts_processed >= max_contracts:
+                    logger.info(f"Reached limit of {max_contracts} contracts, stopping...")
+                    break
+                    
                 title = row.get('title', f"Contract_{idx}")
                 context = row.get('context', '')
                 question_id = row.get('question_id', '')
                 
-                if not context or len(context.strip()) < 100:
+                if not context or len(context.strip()) < 500:  # Skip very short contracts
                     continue
                 
-                # Chunk by paragraphs (contracts can be very long)
+                # Chunk by larger sections to reduce chunk count
+                # Split by double newlines, but combine smaller paragraphs
                 paragraphs = context.split('\n\n')
+                current_chunk_text = ""
+                chunk_size = 0
+                para_idx = 0
                 
-                for para_idx, para in enumerate(paragraphs):
+                for para in paragraphs:
                     para = para.strip()
-                    if len(para) < 200:  # Skip very short paragraphs
+                    if len(para) < 100:  # Skip very short paragraphs
                         continue
                     
-                    # Create chunk
+                    # Combine paragraphs until we have a substantial chunk (500-2000 chars)
+                    if chunk_size + len(para) < 2000:
+                        if current_chunk_text:
+                            current_chunk_text += "\n\n" + para
+                        else:
+                            current_chunk_text = para
+                        chunk_size += len(para) + 2
+                    else:
+                        # Save current chunk if it's large enough
+                        if len(current_chunk_text) >= 500:
+                            chunk = DocumentChunk(
+                                chunk_id=f"cuad_{Path(file_path).stem}_{idx}_chunk_{para_idx}",
+                                text=current_chunk_text,
+                                metadata=DocumentMetadata(
+                                    title=f"{title} - Section {para_idx + 1}",
+                                    source="CUAD Dataset",
+                                    jurisdiction="UK",
+                                    document_type="Contract",
+                                    url="https://www.atticusprojectai.org/cuad",
+                                    file_path=file_path
+                                ),
+                                chunk_index=para_idx,
+                                start_char=0,
+                                end_char=len(current_chunk_text)
+                            )
+                            chunks.append(chunk)
+                            para_idx += 1
+                        
+                        # Start new chunk
+                        current_chunk_text = para
+                        chunk_size = len(para)
+                
+                # Save final chunk if it exists
+                if current_chunk_text and len(current_chunk_text) >= 500:
                     chunk = DocumentChunk(
-                        chunk_id=f"cuad_{Path(file_path).stem}_{idx}_para_{para_idx}",
-                        text=para,
+                        chunk_id=f"cuad_{Path(file_path).stem}_{idx}_chunk_{para_idx}",
+                        text=current_chunk_text,
                         metadata=DocumentMetadata(
-                            title=f"{title} - Paragraph {para_idx + 1}",
+                            title=f"{title} - Section {para_idx + 1}",
                             source="CUAD Dataset",
                             jurisdiction="UK",
                             document_type="Contract",
@@ -373,9 +418,11 @@ class CUADLoader(BaseLoader):
                         ),
                         chunk_index=para_idx,
                         start_char=0,
-                        end_char=len(para)
+                        end_char=len(current_chunk_text)
                     )
                     chunks.append(chunk)
+                
+                contracts_processed += 1
                     
             logger.info(f"Created {len(chunks)} chunks from CUAD file: {Path(file_path).name}")
             
