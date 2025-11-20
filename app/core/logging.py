@@ -12,43 +12,58 @@ from app.core.config import settings
 
 def serialize_log(record: Dict[str, Any]) -> str:
     """Serialize log record to JSON format"""
-    # Handle file path - it's a RecordFile object, not a dict
-    file_path = ""
-    if "file" in record:
-        file_obj = record["file"]
-        if hasattr(file_obj, "path"):
-            file_path = file_obj.path
-        elif isinstance(file_obj, dict):
-            file_path = file_obj.get("path", "")
-    
-    log_data = {
-        "timestamp": record["time"].isoformat(),
-        "level": record["level"].name,
-        "message": record["message"],
-        "module": record.get("name", ""),
-        "function": record.get("function", ""),
-        "line": record.get("line", 0),
-        "file": file_path,
-    }
-    
-    # Add exception info if present
-    if "exception" in record and record["exception"] is not None and isinstance(record["exception"], dict):
-        log_data["exception"] = {
-            "type": record["exception"].get("type", "Unknown"),
-            "value": str(record["exception"].get("value", "")),
-            "traceback": record["exception"].get("traceback", ""),
-        }
-    
-    # Add extra fields if present (handle nested extra)
-    if "extra" in record and record["extra"]:
-        extra_data = record["extra"]
-        # Handle nested "extra" key
-        if isinstance(extra_data, dict) and "extra" in extra_data:
-            log_data.update(extra_data["extra"])
+    try:
+        # Handle file path - it's a RecordFile object, not a dict
+        file_path = ""
+        if "file" in record:
+            file_obj = record["file"]
+            if hasattr(file_obj, "path"):
+                file_path = file_obj.path
+            elif isinstance(file_obj, dict):
+                file_path = file_obj.get("path", "")
+        
+        # Safely get time
+        timestamp = record.get("time")
+        if hasattr(timestamp, "isoformat"):
+            timestamp_str = timestamp.isoformat()
         else:
-            log_data.update(extra_data)
-    
-    return json.dumps(log_data, default=str)
+            timestamp_str = str(timestamp) if timestamp else ""
+        
+        # Safely get level
+        level = record.get("level")
+        level_name = level.name if hasattr(level, "name") else str(level) if level else "UNKNOWN"
+        
+        log_data = {
+            "timestamp": timestamp_str,
+            "level": level_name,
+            "message": record.get("message", ""),
+            "module": record.get("name", ""),
+            "function": record.get("function", ""),
+            "line": record.get("line", 0),
+            "file": file_path,
+        }
+        
+        # Add exception info if present
+        if "exception" in record and record["exception"] is not None and isinstance(record["exception"], dict):
+            log_data["exception"] = {
+                "type": record["exception"].get("type", "Unknown"),
+                "value": str(record["exception"].get("value", "")),
+                "traceback": record["exception"].get("traceback", ""),
+            }
+        
+        # Add extra fields if present (handle nested extra)
+        if "extra" in record and record["extra"]:
+            extra_data = record["extra"]
+            # Handle nested "extra" key
+            if isinstance(extra_data, dict) and "extra" in extra_data:
+                log_data.update(extra_data["extra"])
+            elif isinstance(extra_data, dict):
+                log_data.update(extra_data)
+        
+        return json.dumps(log_data, default=str)
+    except Exception as e:
+        # Fallback to simple string if serialization fails
+        return json.dumps({"message": str(record.get("message", "Unknown")), "error": str(e)})
 
 
 def setup_logging():
