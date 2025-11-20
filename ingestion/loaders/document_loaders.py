@@ -321,6 +321,70 @@ class JSONLoader(BaseLoader):
         return chunks
 
 
+class CUADLoader(BaseLoader):
+    """CUAD (Contract Understanding Atticus Dataset) loader from parquet files"""
+    
+    def __init__(self):
+        try:
+            import pandas as pd
+            self.pd = pd
+        except ImportError:
+            logger.error("pandas not installed. Install with: pip install pandas pyarrow")
+            raise
+    
+    def load_documents(self, file_path: str) -> List[DocumentChunk]:
+        """Load CUAD parquet files and return chunks"""
+        chunks = []
+        
+        try:
+            # Load parquet file
+            df = self.pd.read_parquet(file_path)
+            
+            logger.info(f"Loading CUAD dataset: {len(df)} contracts from {Path(file_path).name}")
+            
+            # Process each contract
+            for idx, row in df.iterrows():
+                title = row.get('title', f"Contract_{idx}")
+                context = row.get('context', '')
+                question_id = row.get('question_id', '')
+                
+                if not context or len(context.strip()) < 100:
+                    continue
+                
+                # Chunk by paragraphs (contracts can be very long)
+                paragraphs = context.split('\n\n')
+                
+                for para_idx, para in enumerate(paragraphs):
+                    para = para.strip()
+                    if len(para) < 200:  # Skip very short paragraphs
+                        continue
+                    
+                    # Create chunk
+                    chunk = DocumentChunk(
+                        chunk_id=f"cuad_{Path(file_path).stem}_{idx}_para_{para_idx}",
+                        text=para,
+                        metadata=DocumentMetadata(
+                            title=f"{title} - Paragraph {para_idx + 1}",
+                            source="CUAD Dataset",
+                            jurisdiction="UK",
+                            document_type="Contract",
+                            url="https://www.atticusprojectai.org/cuad",
+                            file_path=file_path
+                        ),
+                        chunk_index=para_idx,
+                        start_char=0,
+                        end_char=len(para)
+                    )
+                    chunks.append(chunk)
+                    
+            logger.info(f"Created {len(chunks)} chunks from CUAD file: {Path(file_path).name}")
+            
+        except Exception as e:
+            logger.error(f"Error loading CUAD parquet file {file_path}: {e}")
+            
+        return chunks
+
+
 class DocumentLoaderFactory:
     """Factory for creating document loaders"""
     
@@ -335,6 +399,8 @@ class DocumentLoaderFactory:
             return TextLoader()
         elif extension == '.json':
             return JSONLoader()
+        elif extension == '.parquet':
+            return CUADLoader()
         else:
             raise ValueError(f"Unsupported file type: {extension}")
 

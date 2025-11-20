@@ -14,6 +14,7 @@ transformers==4.36.0
 torch>=2.2.0
 numpy>=1.26.4,<2.0.0  # langchain>=0.3.18 requires numpy>=1.26.4
 pandas==2.0.3
+pyarrow>=12.0.0  # Required for reading parquet files (CUAD dataset)
 
 ## Agentic RAG - LangChain
 langchain>=1.0.0  # Pin to 1.x for compatibility with pydantic>=2.7.4 and numpy>=1.26.4

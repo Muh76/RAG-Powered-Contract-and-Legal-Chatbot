@@ -107,12 +107,29 @@ Personal data shall be collected for specified, explicit and legitimate purposes
         else:
             print(f"⚠️ UK legislation directory not found: {uk_legislation_dir}")
         
-        # TODO: Load CUAD dataset (parquet files) - requires additional implementation
+        # Load CUAD dataset (parquet files)
         cuad_dir = project_root / "data" / "cuad" / "data"
         if cuad_dir.exists():
-            print(f"\n📚 CUAD dataset found at {cuad_dir}")
-            print(f"   ⚠️ CUAD dataset loading not yet implemented - skipping for now")
-            print(f"   💡 Tip: Convert CUAD parquet files to JSON or TXT format for ingestion")
+            print(f"\n📚 Loading CUAD dataset from {cuad_dir}")
+            parquet_files = list(cuad_dir.glob("*.parquet"))
+            
+            if parquet_files:
+                print(f"   Found {len(parquet_files)} parquet files")
+                for file_path in sorted(parquet_files):
+                    print(f"📄 Loading: {file_path.name}")
+                    try:
+                        loader = DocumentLoaderFactory.get_loader(str(file_path))
+                        chunks = loader.load_documents(str(file_path))
+                        documents.extend(chunks)
+                        print(f"   ✅ Loaded {len(chunks)} chunks from {file_path.name}")
+                    except Exception as e:
+                        print(f"   ⚠️ Error loading {file_path.name}: {e}")
+                        import traceback
+                        traceback.print_exc()
+            else:
+                print(f"   ⚠️ No parquet files found in {cuad_dir}")
+        else:
+            print(f"\n⚠️ CUAD directory not found: {cuad_dir}")
         
         print(f"✅ Loaded {len(documents)} documents")
         
