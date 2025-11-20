@@ -54,32 +54,44 @@ class LLMService:
         
         context = "\n\n".join(context_parts)
         
-        # Choose prompt template based on mode
+        # Choose prompt template based on mode with STRICT citation enforcement
         if mode == "solicitor":
-            system_prompt = """You are a legal assistant specializing in UK law. You must:
-1. Answer ONLY using the provided legal sources
-2. Use precise legal terminology and cite specific sections
-3. Include citations in format [1], [2], etc. for each claim
-4. If sources are insufficient, clearly state this
-5. Maintain professional legal language"""
+            system_prompt = """You are a legal assistant specializing in UK law. CRITICAL RULES:
+1. Answer ONLY using the provided legal sources - never use prior knowledge
+2. Use precise legal terminology and cite specific sections/Acts
+3. MANDATORY: Cite EVERY sentence with [source_id] format (e.g., [1], [2])
+4. Each factual claim MUST have a citation - uncited claims are FORBIDDEN
+5. If sources are insufficient, state: "The provided sources do not contain sufficient information"
+6. Include Act name and Section number when available in source metadata
+7. Maintain professional legal language"""
         else:  # public mode
-            system_prompt = """You are a legal assistant helping the general public understand UK law. You must:
-1. Answer using the provided legal sources in plain language
+            system_prompt = """You are a legal assistant helping the general public understand UK law. CRITICAL RULES:
+1. Answer using ONLY the provided legal sources - never use prior knowledge
 2. Explain legal concepts clearly without jargon
-3. Include citations in format [1], [2], etc. for each claim
-4. If sources are insufficient, clearly state this
-5. Use accessible, everyday language"""
+3. MANDATORY: Cite EVERY sentence with [source_id] format (e.g., [1], [2])
+4. Each factual claim MUST have a citation - uncited claims are FORBIDDEN
+5. If sources are insufficient, state: "The provided sources do not contain sufficient information"
+6. Include Act name and Section number when available in source metadata
+7. Use accessible, everyday language"""
         
         user_prompt = f"""SOURCES:
 {context}
 
 QUESTION: {query}
 
-Instructions:
-- Answer the question using ONLY the provided sources
-- Include citations [1], [2], etc. for each factual claim
-- If the sources don't contain enough information, say "The provided sources do not contain sufficient information to answer this question completely"
-- Keep your answer concise but comprehensive"""
+STRICT INSTRUCTIONS:
+1. Answer using ONLY the provided sources above
+2. Cite EVERY sentence with [source_id] format (e.g., "Employment rights include... [1]" or "According to Section 1 [2], employers must...")
+3. DO NOT make any claims without citations - this is critical for a legal chatbot
+4. If a source mentions a specific Act and Section, include it: "Employment Rights Act 1996, Section 1 [1] states..."
+5. If sources don't contain enough information, say: "The provided sources do not contain sufficient information to answer this question completely"
+6. Format: [source_id] must appear at the end of each sentence with a factual claim
+
+EXAMPLE GOOD RESPONSE:
+"The Employment Rights Act 1996, Section 1 [1] requires employers to provide written statements. Section 13 [2] protects against unlawful wage deductions. These rights apply to all employees in the UK [1][2]."
+
+EXAMPLE BAD RESPONSE (DO NOT DO THIS):
+"Employment rights include written statements and wage protection. (No citations = FORBIDDEN)"""
         
         try:
             response = self.client.chat.completions.create(

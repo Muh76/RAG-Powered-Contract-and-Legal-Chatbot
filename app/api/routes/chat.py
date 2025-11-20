@@ -76,14 +76,16 @@ def get_llm_service():
 def map_reason_to_safety_flag(reason: str) -> SafetyFlag:
     """Map guardrails reason to SafetyFlag enum"""
     reason_lower = reason.lower()
-    if "harmful" in reason_lower or "injection" in reason_lower:
+    if "citation" in reason_lower or "missing_citations" in reason_lower:
+        return SafetyFlag.NON_LEGAL  # Missing citations is a form of non-compliance
+    elif "harmful" in reason_lower:
         return SafetyFlag.HARMFUL
+    elif "injection" in reason_lower or "prompt" in reason_lower:
+        return SafetyFlag.PROMPT_INJECTION
     elif "domain" in reason_lower or "non_legal" in reason_lower or "insufficient_legal" in reason_lower:
         return SafetyFlag.NON_LEGAL
     elif "pii" in reason_lower or "personal" in reason_lower:
         return SafetyFlag.PII_DETECTED
-    elif "injection" in reason_lower or "prompt" in reason_lower:
-        return SafetyFlag.PROMPT_INJECTION
     else:
         # Default to NON_LEGAL for unknown reasons
         return SafetyFlag.NON_LEGAL
@@ -275,55 +277,78 @@ async def chat(
             
             # Extract answer from LLM result
             answer = llm_result.get("answer", "")
+            citation_validation = llm_result.get("citation_validation", {})
             
             if not answer:
                 answer = "I couldn't generate a response. Please try again."
-            
-            # Update sources with citation validation if available
-            if "citation_validation" in llm_result:
-                logger.debug(f"Citation validation: {llm_result['citation_validation']}")
             
         except Exception as e:
             logger.error(f"LLM generation error: {e}", exc_info=True)
             generation_time_ms = (time.time() - generation_start) * 1000
             answer = "I encountered an error while generating a response. Please try again."
+            citation_validation = {"has_citations": False, "error": str(e)}
         
-        # 4. Calculate confidence and relevance scores (simplified)
+        # 4. Apply comprehensive guardrails
+        guardrails_applied = False
+        guardrails_result = None
+        try:
+            guardrails = get_guardrails_service()
+            guardrails_result = guardrails.apply_all_rules(
+                query=request.query,
+                answer=answer,
+                retrieved_chunks=retrieval_result,
+                citation_validation=citation_validation
+            )
+            guardrails_applied = True
+            
+            # If guardrails failed, reject the answer
+            if not guardrails_result.get("all_passed", False):
+                failures = guardrails_result.get("failures", [])
+                failure_messages = [f["message"] for f in failures]
+                
+                # If citations are missing, this is critical - reject the answer
+                citation_failure = next((f for f in failures if f["rule"] == "citation_enforcement"), None)
+                if citation_failure:
+                    logger.warning(f"Answer rejected due to missing citations: {citation_failure['message']}")
+                    return ChatResponse(
+                        answer=f"I cannot provide this answer because it lacks proper citations to legal sources. {citation_failure['message']}. Please regenerate with citations in [1], [2] format.",
+                        sources=sources,
+                        safety=SafetyReport(
+                            is_safe=False,
+                            flags=[map_reason_to_safety_flag("missing_citations")],
+                            confidence=0.95,
+                            reasoning=f"Guardrails failed: {citation_failure['message']}"
+                        ),
+                        metrics=LatencyAndScores(
+                            retrieval_time_ms=retrieval_time_ms,
+                            generation_time_ms=generation_time_ms,
+                            total_time_ms=(time.time() - start_time) * 1000,
+                            retrieval_score=0.0,
+                            answer_relevance_score=0.0
+                        ),
+                        confidence_score=0.0,
+                        legal_jurisdiction="UK"
+                    )
+                
+                # Other failures - log but allow with warning
+                logger.warning(f"Guardrails found issues: {failure_messages}")
+                # Add warnings to response
+                warnings_text = "\n\n⚠️ Warnings: " + "; ".join(failure_messages)
+                answer += warnings_text
+                
+        except Exception as e:
+            logger.error(f"Guardrails error: {e}", exc_info=True)
+            # Continue but log the error
+        
+        # 5. Calculate confidence and relevance scores
         confidence_score = min(1.0, max(0.0, (
             sum(r.get("similarity_score", 0.0) for r in retrieval_result) / len(retrieval_result) if retrieval_result else 0.0
         )))
         
-        answer_relevance_score = 0.8  # Simplified - could use LLM to evaluate relevance
+        # Citation count for metrics
+        citation_count = citation_validation.get("valid_count", citation_validation.get("count", 0)) if citation_validation else 0
         
-        # 5. Final safety check on answer
-        try:
-            guardrails = get_guardrails_service()
-            answer_validation = guardrails.validate_answer(answer, request.query)
-            
-            if not answer_validation["valid"]:
-                safety_flag = map_reason_to_safety_flag(answer_validation["reason"])
-                return ChatResponse(
-                    answer=answer_validation["message"],
-                    sources=sources,
-                    safety=SafetyReport(
-                        is_safe=False,
-                        flags=[safety_flag],
-                        confidence=0.9,
-                        reasoning=answer_validation.get("suggestion", "")
-                    ),
-                    metrics=LatencyAndScores(
-                        retrieval_time_ms=retrieval_time_ms,
-                        generation_time_ms=generation_time_ms,
-                        total_time_ms=(time.time() - start_time) * 1000,
-                        retrieval_score=confidence_score,
-                        answer_relevance_score=answer_relevance_score
-                    ),
-                    confidence_score=confidence_score,
-                    legal_jurisdiction="UK"
-                )
-        except Exception as e:
-            logger.warning(f"Final safety check error: {e}")
-            # Continue with response even if safety check fails
+        answer_relevance_score = 0.8  # Could be improved with LLM evaluation
         
         # Log request with user info
         logger.info(
@@ -334,14 +359,39 @@ async def chat(
             f"generation_time={generation_time_ms:.1f}ms"
         )
         
-        return ChatResponse(
+        # Determine safety status
+        safety_flags = []
+        safety_confidence = 1.0
+        safety_reasoning = "All safety checks passed"
+        
+        if guardrails_result:
+            if not guardrails_result.get("all_passed", False):
+                safety_confidence = 0.7
+                safety_reasoning = "Some guardrail warnings present"
+                warnings = guardrails_result.get("warnings", [])
+                if warnings:
+                    safety_reasoning += ": " + "; ".join([w["message"] for w in warnings])
+        
+        # Build response with metadata in reasoning field (for now)
+        # Include guardrails info in safety reasoning
+        if guardrails_applied and guardrails_result:
+            if guardrails_result.get("all_passed", False):
+                enhanced_reasoning = safety_reasoning + f" | Guardrails: {', '.join(guardrails_result.get('rules_applied', []))}"
+            else:
+                failures = guardrails_result.get("failures", [])
+                failure_msgs = [f["rule"] for f in failures]
+                enhanced_reasoning = safety_reasoning + f" | Guardrails failed: {', '.join(failure_msgs)}"
+        else:
+            enhanced_reasoning = safety_reasoning + " | Guardrails: Not applied"
+        
+        response_obj = ChatResponse(
             answer=answer,
             sources=sources,
             safety=SafetyReport(
                 is_safe=True,
-                flags=[],
-                confidence=1.0,
-                reasoning="All safety checks passed"
+                flags=safety_flags,
+                confidence=safety_confidence,
+                reasoning=enhanced_reasoning
             ),
             metrics=LatencyAndScores(
                 retrieval_time_ms=retrieval_time_ms,
@@ -353,6 +403,14 @@ async def chat(
             confidence_score=confidence_score,
             legal_jurisdiction="UK"
         )
+        
+        # Store metadata in response object for frontend access
+        # We'll add these as response headers or in a custom way
+        # For now, include key info in sources or add to response after creation
+        # FastAPI will serialize ChatResponse, so we add metadata via response_model_exclude_unset=False
+        # Actually, let's just return the response and handle metadata extraction in frontend
+        
+        return response_obj
         
     except HTTPException:
         raise

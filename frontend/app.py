@@ -161,32 +161,64 @@ class LegalChatbotUI:
     
     def display_response_metadata(self, response: Dict[str, Any]):
         """Display response metadata and validation info"""
+        import re
+        
         with st.expander("🔍 Response Details"):
             col1, col2 = st.columns(2)
             
+            # Extract citation count from answer text (count [1], [2], etc.)
+            answer = response.get('answer', '')
+            citation_pattern = r'\[(\d+)\]'
+            found_citations = re.findall(citation_pattern, answer)
+            citation_count = len(set(found_citations))  # Count unique citations
+            
             with col1:
-                st.write("**Model:**", response.get('model_used', 'N/A'))
-                st.write("**Mode:**", response.get('mode', 'N/A'))
-                st.write("**Citations:**", len(response.get('citations', [])))
+                # Get model and mode from response
+                model = response.get('model_used', response.get('model', 'N/A'))
+                mode = response.get('mode', response.get('response_mode', 'N/A'))
+                
+                st.write("**Model:**", model)
+                st.write("**Mode:**", mode)
+                st.write("**Citations:**", citation_count)
             
             with col2:
-                st.write("**Guardrails Applied:**", response.get('guardrails_applied', False))
+                # Check guardrails status
+                guardrails_applied = response.get('guardrails_applied', False)
+                safety = response.get('safety', {})
                 
-                # Display validation info
-                if response.get('query_validation'):
-                    qv = response['query_validation']
-                    st.write("**Query Validation:**", qv.get('reason', 'N/A'))
+                # Display guardrails status with color
+                if isinstance(safety, dict):
+                    is_safe = safety.get('is_safe', True)
+                    if guardrails_applied:
+                        if is_safe:
+                            st.success("✅ **Guardrails Applied:** True")
+                        else:
+                            st.warning("⚠️ **Guardrails Applied:** True (warnings)")
+                    else:
+                        st.error("❌ **Guardrails Applied:** False")
+                else:
+                    st.write("**Guardrails Applied:**", "✅ True" if guardrails_applied else "❌ False")
                 
-                if response.get('response_validation'):
-                    rv = response['response_validation']
-                    st.write("**Response Validation:**", rv.get('reason', 'N/A'))
+                # Display guardrails result if available
+                if response.get('guardrails_result'):
+                    gr = response['guardrails_result']
+                    rules_applied = gr.get('rules_applied', [])
+                    if rules_applied:
+                        st.write("**Rules Applied:**", ", ".join(rules_applied))
             
             # Display retrieval info
-            if response.get('retrieval_info'):
-                ri = response['retrieval_info']
-                st.write("**Retrieval Info:**")
-                st.write(f"- Chunks retrieved: {ri.get('num_chunks_retrieved', 0)}")
-                st.write(f"- Max similarity: {ri.get('max_similarity_score', 0):.3f}")
+            sources = response.get('sources', [])
+            if sources:
+                st.write("**Sources Retrieved:**", len(sources))
+            
+            # Display metrics if available
+            metrics = response.get('metrics', {})
+            if metrics and isinstance(metrics, dict):
+                st.write("**Metrics:**")
+                st.write(f"- Retrieval time: {metrics.get('retrieval_time_ms', 0):.1f}ms")
+                st.write(f"- Generation time: {metrics.get('generation_time_ms', 0):.1f}ms")
+                st.write(f"- Total time: {metrics.get('total_time_ms', 0):.1f}ms")
+                st.write(f"- Confidence: {metrics.get('retrieval_score', 0):.3f}")
                 st.write(f"- Avg similarity: {ri.get('avg_similarity_score', 0):.3f}")
     
     def render_sidebar(self):
@@ -328,14 +360,35 @@ class LegalChatbotUI:
                     st.text(response.get('detail', ''))
                 else:
                     # Display answer
-                    st.markdown(response.get('answer', 'No answer provided'))
+                    answer = response.get('answer', 'No answer provided')
+                    st.markdown(answer)
+                    
+                    # Extract metadata from response
+                    safety = response.get('safety', {})
+                    metrics = response.get('metrics', {})
+                    
+                    # Determine guardrails status from safety reasoning
+                    reasoning = safety.get('reasoning', '') if isinstance(safety, dict) else ''
+                    guardrails_applied = 'Guardrails' in reasoning
+                    
+                    # Extract model and mode from safety reasoning or defaults
+                    model_used = response.get('model_used', 'N/A')
+                    mode = response.get('mode', 'N/A')
+                    
+                    # Add metadata to response dict for display
+                    response_with_metadata = response.copy()
+                    response_with_metadata['guardrails_applied'] = guardrails_applied
+                    response_with_metadata['model_used'] = model_used
+                    response_with_metadata['mode'] = mode
+                    response_with_metadata['safety'] = safety if isinstance(safety, dict) else {}
+                    response_with_metadata['metrics'] = metrics if isinstance(metrics, dict) else {}
                     
                     # Store response with metadata
                     self.session_state.messages.append({
                         "role": "assistant",
-                        "content": response.get('answer', ''),
+                        "content": answer,
                         "citations": response.get('sources', []),
-                        "metadata": response
+                        "metadata": response_with_metadata
                     })
                     
                     # Display citations
@@ -344,8 +397,8 @@ class LegalChatbotUI:
                         self.display_citations(sources)
                     
                     # Display metadata
-                    if response:
-                        self.display_response_metadata(response)
+                    if response_with_metadata:
+                        self.display_response_metadata(response_with_metadata)
     
     def _render_documents_interface(self):
         """Render documents management interface"""
