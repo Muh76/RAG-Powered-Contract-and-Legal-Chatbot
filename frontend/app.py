@@ -219,7 +219,22 @@ class LegalChatbotUI:
                 st.write(f"- Generation time: {metrics.get('generation_time_ms', 0):.1f}ms")
                 st.write(f"- Total time: {metrics.get('total_time_ms', 0):.1f}ms")
                 st.write(f"- Confidence: {metrics.get('retrieval_score', 0):.3f}")
-                st.write(f"- Avg similarity: {ri.get('avg_similarity_score', 0):.3f}")
+                
+                # Calculate average similarity from sources if available
+                sources_list = response.get('sources', [])
+                if sources_list:
+                    similarity_scores = []
+                    for source in sources_list:
+                        if isinstance(source, dict):
+                            sim = source.get('similarity_score', 0.0)
+                        else:
+                            sim = getattr(source, 'similarity_score', 0.0) if hasattr(source, 'similarity_score') else 0.0
+                        if sim > 0:
+                            similarity_scores.append(sim)
+                    
+                    if similarity_scores:
+                        avg_similarity = sum(similarity_scores) / len(similarity_scores)
+                        st.write(f"- Avg similarity: {avg_similarity:.3f}")
     
     def render_sidebar(self):
         """Render the sidebar with controls and user profile"""
