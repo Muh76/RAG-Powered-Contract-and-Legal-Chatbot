@@ -46,50 +46,31 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     if not plain_password or not hashed_password:
         return False
     
-    # Handle bcrypt's 72-byte limit by truncating before verification
-    if isinstance(plain_password, str):
-        password_bytes = plain_password.encode('utf-8')
-        if len(password_bytes) > 72:
-            # Truncate to 72 bytes, then decode back to string
-            plain_password = password_bytes[:72].decode('utf-8', errors='ignore')
-    
     if pwd_context is None:
-        # Fallback to direct bcrypt
+        # Fallback to direct bcrypt if pwd_context not available
         try:
             import bcrypt
-            password_bytes = plain_password.encode('utf-8')[:72]
-            hashed_bytes = hashed_password.encode('utf-8') if isinstance(hashed_password, str) else hashed_password
-            return bcrypt.checkpw(password_bytes, hashed_bytes)
-        except (ImportError, Exception) as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Password verification failed: {e}")
-            return False
-    
-    try:
-        return pwd_context.verify(plain_password, hashed_password)
-    except ValueError as e:
-        # Handle bcrypt-specific errors - try direct bcrypt
-        if "72 bytes" in str(e):
-            try:
-                import bcrypt
-                password_bytes = plain_password.encode('utf-8')[:72]
-                hashed_bytes = hashed_password.encode('utf-8') if isinstance(hashed_password, str) else hashed_password
-                return bcrypt.checkpw(password_bytes, hashed_bytes)
-            except (ImportError, Exception):
-                return False
-        return False
-    except (TypeError, Exception) as e:
-        # Fallback to direct bcrypt if passlib fails
-        try:
-            import bcrypt
-            password_bytes = plain_password.encode('utf-8')[:72]
+            password_bytes = plain_password.encode('utf-8') if isinstance(plain_password, str) else plain_password
+            if len(password_bytes) > 72:
+                password_bytes = password_bytes[:72]
             hashed_bytes = hashed_password.encode('utf-8') if isinstance(hashed_password, str) else hashed_password
             return bcrypt.checkpw(password_bytes, hashed_bytes)
         except (ImportError, Exception):
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"Password verification error: {e}")
+            return False
+    
+    # Use pwd_context (passlib) - this was the original working version
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except Exception as e:
+        # If passlib fails, try direct bcrypt as fallback
+        try:
+            import bcrypt
+            password_bytes = plain_password.encode('utf-8') if isinstance(plain_password, str) else plain_password
+            if len(password_bytes) > 72:
+                password_bytes = password_bytes[:72]
+            hashed_bytes = hashed_password.encode('utf-8') if isinstance(hashed_password, str) else hashed_password
+            return bcrypt.checkpw(password_bytes, hashed_bytes)
+        except (ImportError, Exception):
             return False
 
 
