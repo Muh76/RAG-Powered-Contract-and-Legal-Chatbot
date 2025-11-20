@@ -186,14 +186,16 @@ class JSONLoader(BaseLoader):
                     act_name = title
                     
                     # Parse content to extract sections properly
-                    # UK legislation format: "Section X. Text..." or "X. Text..." or "Part X Section Y"
+                    # UK legislation format: "1. Section title", "Section 1", "Part I", etc.
                     import re
                     
-                    # Pattern to find section markers: "1. ", "Section 1", "Part I", etc.
-                    section_pattern = r'(?:Section|S\.|S)\s*(\d+[A-Za-z]?)[\.:]\s*|^(\d+[A-Za-z]?)[\.:]\s+|^Part\s+([IVX]+|[\d]+)\s+|^PART\s+([IVX]+|[\d]+)\s+'
+                    # Pattern to find section markers - match section numbers followed by periods
+                    # Examples: "1. ", "Section 1", "1A. ", "Part I ", "PART 2A ", etc.
+                    # Also match section references like "Sections 17-22" or "Section 13"
+                    section_pattern = r'(?:Section|S\.|S)\s+(\d+[A-Za-z]?)[\.:]\s+|(?<!\d)(\d+[A-Za-z]?)[\.]\s+|(?:Part|PART)\s+([IVX]+|\d+[A-Za-z]?)\s+'
                     
                     # Split content by section markers
-                    section_matches = list(re.finditer(section_pattern, content, re.MULTILINE))
+                    section_matches = list(re.finditer(section_pattern, content, re.IGNORECASE | re.MULTILINE))
                     
                     if section_matches:
                         # Create chunks for each section
