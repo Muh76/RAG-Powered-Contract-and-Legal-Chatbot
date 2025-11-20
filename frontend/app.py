@@ -386,9 +386,9 @@ class LegalChatbotUI:
                     reasoning = safety.get('reasoning', '') if isinstance(safety, dict) else ''
                     guardrails_applied = 'Guardrails' in reasoning
                     
-                    # Extract model and mode from safety reasoning or defaults
-                    model_used = response.get('model_used', 'N/A')
-                    mode = response.get('mode', 'N/A')
+                    # Extract model and mode from response
+                    model_used = response.get('model_used', response.get('model', 'N/A'))
+                    mode = response.get('response_mode', response.get('mode', 'N/A'))
                     
                     # Add metadata to response dict for display
                     response_with_metadata = response.copy()
