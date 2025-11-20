@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     TOP_K_RETRIEVAL: int = 10
     SIMILARITY_THRESHOLD: float = 0.7
     RERANK_TOP_K: int = 5
-    ENABLE_RERANKING: bool = False  # Enable cross-encoder reranking
+    ENABLE_RERANKING: bool = True  # Enable cross-encoder reranking for better results
     RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     RERANKER_BATCH_SIZE: int = 32
     

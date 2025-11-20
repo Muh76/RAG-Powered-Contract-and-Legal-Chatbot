@@ -135,13 +135,27 @@ class GuardrailsService:
             "message": "Answer validated successfully"
         }
     
-    def check_citations(self, answer: str, num_sources: int) -> Dict[str, Any]:
-        """Check if answer contains proper citations"""
-        # Find all citation patterns [1], [2], etc.
-        citation_pattern = r'\[(\d+)\]'
-        found_citations = re.findall(citation_pattern, answer)
+    def check_citations(self, answer: str, num_sources: int, retrieved_chunks: List[Dict] = None) -> Dict[str, Any]:
+        """Check if answer contains proper citations that match actual retrieved sources"""
+        # Find all citation patterns - STRICT: only [1], [2], etc. - NO complex formats like [3, Section 17-22]
+        # Reject citations with extra text like [3, Section X] - only allow [3]
+        citation_pattern_simple = r'\[(\d+)\]'  # Only simple format
+        citation_pattern_complex = r'\[(\d+)\s*[,;]\s*[^\]]+\]'  # Complex format like [3, Section X]
         
-        if not found_citations:
+        found_simple = re.findall(citation_pattern_simple, answer)
+        found_complex = re.findall(citation_pattern_complex, answer)
+        
+        # If complex citations found, reject them as invalid
+        if found_complex:
+            return {
+                "valid": False,
+                "has_citations": True,
+                "count": len(found_simple),
+                "reason": "invalid_citation_format",
+                "message": f"Citations must use simple format [1], [2], etc. Complex formats like [3, Section X] are not allowed. Found {len(found_complex)} complex citations."
+            }
+        
+        if not found_simple:
             return {
                 "valid": False,
                 "has_citations": False,
@@ -150,36 +164,64 @@ class GuardrailsService:
                 "message": "Response must include citations [1], [2], etc. for each factual claim"
             }
         
-        # Check if citations are within valid range
+        # Check if citations match actual retrieved source IDs
         valid_citations = []
         invalid_citations = []
-        for citation in found_citations:
-            citation_num = int(citation)
-            if 1 <= citation_num <= num_sources:
-                valid_citations.append(citation_num)
-            else:
-                invalid_citations.append(citation_num)
+        available_source_ids = set(range(1, num_sources + 1))
+        
+        # If we have retrieved chunks, validate citations match actual sources
+        if retrieved_chunks:
+            for citation in found_simple:
+                citation_num = int(citation)
+                if citation_num in available_source_ids:
+                    # Additional check: verify citation matches a source that actually exists
+                    chunk_idx = citation_num - 1
+                    if chunk_idx < len(retrieved_chunks):
+                        valid_citations.append(citation_num)
+                    else:
+                        invalid_citations.append(citation_num)
+                else:
+                    invalid_citations.append(citation_num)
+        else:
+            # Fallback: just check range
+            for citation in found_simple:
+                citation_num = int(citation)
+                if 1 <= citation_num <= num_sources:
+                    valid_citations.append(citation_num)
+                else:
+                    invalid_citations.append(citation_num)
         
         if len(valid_citations) == 0:
             return {
                 "valid": False,
                 "has_citations": True,
-                "count": len(found_citations),
+                "count": len(found_simple),
                 "valid_count": 0,
                 "invalid_citations": invalid_citations,
                 "reason": "invalid_citations",
-                "message": f"Citations found but none are valid (must be 1-{num_sources})"
+                "message": f"Citations found but none match retrieved sources (must be 1-{num_sources})"
             }
         
-        # Count sentences and check citation coverage
-        sentences = re.split(r'[.!?]+', answer)
-        sentences_with_citations = sum(1 for s in sentences if re.search(citation_pattern, s))
+        # Count sentences and check citation coverage - require at least 80% coverage
+        sentences = [s.strip() for s in re.split(r'[.!?]+', answer) if s.strip()]
+        sentences_with_citations = sum(1 for s in sentences if re.search(citation_pattern_simple, s))
         citation_coverage = sentences_with_citations / len(sentences) if sentences else 0
+        
+        if citation_coverage < 0.8:
+            return {
+                "valid": False,
+                "has_citations": True,
+                "count": len(found_simple),
+                "valid_count": len(valid_citations),
+                "citation_coverage": citation_coverage,
+                "reason": "insufficient_citation_coverage",
+                "message": f"Only {citation_coverage*100:.1f}% of sentences have citations. Required: 80% minimum."
+            }
         
         return {
             "valid": True,
             "has_citations": True,
-            "count": len(found_citations),
+            "count": len(found_simple),
             "valid_count": len(valid_citations),
             "invalid_count": len(invalid_citations),
             "citation_coverage": citation_coverage,
@@ -189,8 +231,8 @@ class GuardrailsService:
             "total_sentences": len(sentences)
         }
     
-    def check_source_coverage(self, answer: str, retrieved_chunks: List[Dict]) -> Dict[str, Any]:
-        """Check if answer content matches retrieved sources"""
+    def check_source_coverage(self, answer: str, retrieved_chunks: List[Dict], similarity_scores: List[float] = None) -> Dict[str, Any]:
+        """Check if answer content matches retrieved sources - STRICT validation"""
         if not retrieved_chunks:
             return {
                 "valid": False,
@@ -198,28 +240,71 @@ class GuardrailsService:
                 "message": "No sources were retrieved"
             }
         
-        # Extract key phrases from answer (simplified - could use more sophisticated matching)
+        # CRITICAL: Check average similarity - reject if too low (hallucination likely)
+        if similarity_scores:
+            avg_similarity = sum(similarity_scores) / len(similarity_scores) if similarity_scores else 0.0
+            min_similarity = min(similarity_scores) if similarity_scores else 0.0
+            
+            # Require minimum similarity threshold - reject weak matches
+            if avg_similarity < 0.5 or min_similarity < 0.3:
+                return {
+                    "valid": False,
+                    "reason": "weak_grounding",
+                    "avg_similarity": avg_similarity,
+                    "min_similarity": min_similarity,
+                    "message": f"Retrieved sources have weak similarity (avg: {avg_similarity:.3f}, min: {min_similarity:.3f}). Answer may contain hallucinated content. Minimum required: avg 0.5, min 0.3."
+                }
+        
+        # Extract key phrases from answer
         answer_lower = answer.lower()
+        answer_words = set(answer_lower.split())
+        answer_length = len(answer_words)
+        
+        # Check if answer is too long compared to sources (hallucination indicator)
+        total_source_length = sum(len(chunk.get('text', '').split()) for chunk in retrieved_chunks)
+        if answer_length > total_source_length * 2:  # Answer is more than 2x longer than sources
+            return {
+                "valid": False,
+                "reason": "answer_too_long",
+                "answer_length": answer_length,
+                "source_length": total_source_length,
+                "ratio": answer_length / total_source_length if total_source_length > 0 else 0,
+                "message": f"Answer is {answer_length / total_source_length:.1f}x longer than retrieved sources. This suggests hallucination. Maximum ratio: 2.0"
+            }
         
         # Check if answer mentions any source-specific information
         source_mentions = []
         for i, chunk in enumerate(retrieved_chunks):
-            chunk_text = chunk.get('text', '').lower()[:200]  # First 200 chars
-            # Simple keyword overlap check
-            chunk_words = set(chunk_text.split()[:10])  # First 10 words
-            answer_words = set(answer_lower.split())
+            chunk_text = chunk.get('text', '').lower()
+            chunk_words = set(chunk_text.split())
+            
+            # Calculate overlap percentage
             overlap = len(chunk_words.intersection(answer_words))
-            if overlap > 2:  # At least 3 words overlap
+            overlap_ratio = overlap / len(chunk_words) if chunk_words else 0
+            
+            # Require significant overlap (at least 5% of source words in answer)
+            if overlap_ratio >= 0.05 or overlap > 5:
                 source_mentions.append(i + 1)
         
         coverage_ratio = len(source_mentions) / len(retrieved_chunks) if retrieved_chunks else 0
         
+        # Require at least 70% of sources to be mentioned (stricter than before)
+        if coverage_ratio < 0.7:
+            return {
+                "valid": False,
+                "coverage_ratio": coverage_ratio,
+                "sources_mentioned": source_mentions,
+                "total_sources": len(retrieved_chunks),
+                "reason": "low_coverage",
+                "message": f"Answer only references {len(source_mentions)}/{len(retrieved_chunks)} sources ({coverage_ratio*100:.1f}%). Minimum required: 70%"
+            }
+        
         return {
-            "valid": coverage_ratio >= 0.5,  # At least 50% of sources should be mentioned
+            "valid": True,
             "coverage_ratio": coverage_ratio,
             "sources_mentioned": source_mentions,
             "total_sources": len(retrieved_chunks),
-            "reason": "low_coverage" if coverage_ratio < 0.5 else "good_coverage",
+            "reason": "good_coverage",
             "message": f"Answer covers {len(source_mentions)}/{len(retrieved_chunks)} sources"
         }
     
@@ -244,13 +329,16 @@ class GuardrailsService:
                 "message": query_validation["message"]
             })
         
-        # Rule 2: Citation enforcement
-        num_sources = len(retrieved_chunks)
-        if citation_validation:
-            citation_check = citation_validation
-        else:
-            citation_check = self.check_citations(answer, num_sources)
-        results["rules_applied"].append("citation_enforcement")
+            # Rule 2: Citation enforcement - STRICT: must match actual source IDs
+            num_sources = len(retrieved_chunks)
+            if citation_validation:
+                citation_check = citation_validation
+                # If citation_validation was provided, ensure it has retrieved_chunks context
+                if 'valid_citations' not in citation_check or not citation_check.get('valid_citations'):
+                    citation_check = self.check_citations(answer, num_sources, retrieved_chunks)
+            else:
+                citation_check = self.check_citations(answer, num_sources, retrieved_chunks)
+            results["rules_applied"].append("citation_enforcement")
         if not citation_check.get("has_citations", False):
             results["all_passed"] = False
             results["failures"].append({
@@ -271,8 +359,9 @@ class GuardrailsService:
                 "message": f"Only {citation_check.get('citation_coverage', 0)*100:.1f}% of sentences have citations"
             })
         
-        # Rule 3: Hallucination check (source coverage)
-        source_coverage = self.check_source_coverage(answer, retrieved_chunks)
+        # Rule 3: Hallucination check (source coverage) - STRICT: check similarity and length
+        similarity_scores = [chunk.get('similarity_score', 0.0) for chunk in retrieved_chunks if isinstance(chunk, dict)]
+        source_coverage = self.check_source_coverage(answer, retrieved_chunks, similarity_scores)
         results["rules_applied"].append("source_coverage")
         if not source_coverage["valid"]:
             results["all_passed"] = False
@@ -313,7 +402,7 @@ class GuardrailsService:
                 "message": harmful_check["message"]
             })
         
-        # Rule 6: Grounding validation (minimum sources)
+        # Rule 6: Grounding validation (minimum sources and similarity threshold)
         if len(retrieved_chunks) < 1:
             results["all_passed"] = False
             results["failures"].append({
@@ -321,6 +410,28 @@ class GuardrailsService:
                 "reason": "insufficient_sources",
                 "message": "Insufficient sources retrieved for answering"
             })
+        
+        # Check similarity scores - require minimum threshold
+        similarity_scores = [chunk.get('similarity_score', 0.0) for chunk in retrieved_chunks if isinstance(chunk, dict) and chunk.get('similarity_score')]
+        if similarity_scores:
+            avg_similarity = sum(similarity_scores) / len(similarity_scores)
+            min_similarity = min(similarity_scores)
+            
+            # STRICT: Require minimum similarity - reject weak matches
+            if avg_similarity < 0.5:
+                results["all_passed"] = False
+                results["failures"].append({
+                    "rule": "grounding_validation",
+                    "reason": "weak_similarity",
+                    "avg_similarity": avg_similarity,
+                    "message": f"Average similarity ({avg_similarity:.3f}) is too low. Retrieved sources may not be relevant. Minimum required: 0.5"
+                })
+            elif min_similarity < 0.3:
+                results["warnings"].append({
+                    "rule": "grounding_validation",
+                    "message": f"Some sources have very low similarity (min: {min_similarity:.3f}). Answer may be unreliable."
+                })
+        
         results["rules_applied"].append("grounding_validation")
         
         return results

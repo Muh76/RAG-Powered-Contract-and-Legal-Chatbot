@@ -173,10 +173,12 @@ async def chat(
             loop = asyncio.get_event_loop()
             
             # Prepare search function with private corpus if available
+            # CRITICAL: Enable hybrid search for better retrieval quality
             def search_func():
                 return rag.search(
                     query=request.query,
-                    top_k=request.top_k or 5,
+                    top_k=(request.top_k or 5) * 2,  # Retrieve more initially for filtering
+                    use_hybrid=True,  # Enable hybrid search (BM25 + semantic + reranker)
                     user_id=current_user.id if include_private_corpus else None,
                     include_private_corpus=include_private_corpus and private_corpus_results is not None,
                     private_corpus_results=private_corpus_results
@@ -188,6 +190,66 @@ async def chat(
             )
             
             retrieval_time_ms = (time.time() - retrieval_start) * 1000
+            
+            # CRITICAL: Post-retrieval filtering to remove irrelevant Acts
+            # Extract key terms from query to filter relevant Acts
+            query_lower = request.query.lower()
+            act_keywords = {
+                "employment": ["Employment Rights Act", "Employment", "employment_rights", "employment_rights_act"],
+                "equality": ["Equality Act", "Equality", "equality_act"],
+                "sale": ["Sale of Goods Act", "Sale of Goods", "sale_of_goods", "sale_of_goods_act"],
+                "data protection": ["Data Protection Act", "Data Protection", "data_protection"],
+                "wages": ["Employment Rights Act", "Employment", "employment_rights"],
+                "discrimination": ["Equality Act", "Equality", "equality_act"],
+                "goods": ["Sale of Goods Act", "Sale of Goods", "sale_of_goods"]
+            }
+            
+            # Find matching Acts from query
+            matching_acts = []
+            for keyword, acts in act_keywords.items():
+                if keyword in query_lower:
+                    matching_acts.extend(acts)
+                    break  # Only use first match
+            
+            # Filter results if we have matching Acts and retrieved results
+            if matching_acts and retrieval_result:
+                filtered_results = []
+                for result in retrieval_result:
+                    # Check if result matches relevant Act
+                    metadata = result.get('metadata', {})
+                    title = metadata.get('title', '').lower()
+                    source = metadata.get('source', '').lower()
+                    chunk_text = result.get('text', '').lower()
+                    chunk_id = result.get('chunk_id', '').lower()
+                    
+                    # Check if result matches any relevant Act keyword
+                    is_relevant = any(act.lower() in title or act.lower() in source or act.lower() in chunk_id for act in matching_acts)
+                    
+                    # Also check if result has high similarity (keep high-similarity results even if Act doesn't match)
+                    similarity = result.get('similarity_score', 0.0)
+                    
+                    # Keep if relevant OR has high similarity (>= 0.6) OR matches query keywords in text
+                    query_words = set(query_lower.split())
+                    chunk_words = set(chunk_text.split())
+                    keyword_overlap = len(query_words.intersection(chunk_words))
+                    
+                    if is_relevant or similarity >= 0.6 or keyword_overlap >= 3:
+                        filtered_results.append(result)
+                    else:
+                        logger.debug(f"Filtered out irrelevant result: {metadata.get('title', 'Unknown')} (similarity: {similarity:.3f})")
+                
+                # If filtering removed too many results, keep top-k by similarity regardless of Act
+                if len(filtered_results) < request.top_k and len(filtered_results) > 0:
+                    retrieval_result = filtered_results[:request.top_k]
+                    logger.info(f"Filtered to {len(retrieval_result)} relevant results")
+                elif len(filtered_results) >= request.top_k:
+                    # Sort filtered results by similarity and take top-k
+                    retrieval_result = sorted(filtered_results, key=lambda x: x.get('similarity_score', 0.0), reverse=True)[:request.top_k]
+                    logger.info(f"Filtered to {len(retrieval_result)} relevant results from {len(filtered_results)} matches")
+                elif not filtered_results and retrieval_result:
+                    # All filtered out - keep top-k by similarity as fallback
+                    retrieval_result = sorted(retrieval_result, key=lambda x: x.get('similarity_score', 0.0), reverse=True)[:request.top_k]
+                    logger.warning(f"All results filtered out, keeping top {request.top_k} by similarity")
             
             if not retrieval_result:
                 logger.warning("No results retrieved from RAG service")
@@ -261,6 +323,37 @@ async def chat(
             response_mode = request.mode.value if request.mode and request.mode.value in ["solicitor", "public"] else user_mode
             
             logger.info(f"Using response mode: {response_mode} (user role: {current_user.role.value}, request mode: {request.mode.value if request.mode else 'not provided'})")
+            
+            # CRITICAL: Check retrieval quality BEFORE generation - reject weak matches
+            if retrieval_result:
+                similarity_scores = [r.get("similarity_score", 0.0) for r in retrieval_result if isinstance(r, dict)]
+                if similarity_scores:
+                    avg_similarity = sum(similarity_scores) / len(similarity_scores)
+                    min_similarity = min(similarity_scores)
+                    
+                    # Reject if average similarity is too low - prevents hallucination
+                    if avg_similarity < 0.5:
+                        generation_time_ms = (time.time() - generation_start) * 1000
+                        logger.warning(f"Rejecting query due to weak retrieval similarity: {avg_similarity:.3f}")
+                        return ChatResponse(
+                            answer=f"I cannot provide a confident answer because the retrieved sources have weak relevance (similarity: {avg_similarity:.3f}). The available sources may not contain sufficient information to answer this question accurately. Please try rephrasing your question or be more specific about the legal topic.",
+                            sources=sources,
+                            safety=SafetyReport(
+                                is_safe=True,
+                                flags=[],
+                                confidence=0.8,
+                                reasoning=f"Grounding validation: Weak similarity ({avg_similarity:.3f}) - insufficient sources for confident answer"
+                            ),
+                            metrics=LatencyAndScores(
+                                retrieval_time_ms=retrieval_time_ms,
+                                generation_time_ms=generation_time_ms,
+                                total_time_ms=(time.time() - start_time) * 1000,
+                                retrieval_score=avg_similarity,
+                                answer_relevance_score=0.0
+                            ),
+                            confidence_score=avg_similarity,
+                            legal_jurisdiction="UK"
+                        )
             
             # Use generate_legal_answer for proper mode-based responses with citations
             loop = asyncio.get_event_loop()

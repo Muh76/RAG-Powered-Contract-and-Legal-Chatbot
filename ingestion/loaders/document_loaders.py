@@ -181,48 +181,100 @@ class JSONLoader(BaseLoader):
                     title = data.get('title', Path(file_path).stem)
                     url = data.get('url')
                     content = data.get('content', '')
-                    sections = data.get('sections', [])
                     
-                    # Split content by sections if available
-                    if sections:
-                        # Split content into sections
-                        section_texts = content.split('\n\n')
-                        for idx, (section, section_text) in enumerate(zip(sections, section_texts)):
-                            if section_text.strip():
+                    # Extract Act name from title (e.g., "Employment Rights Act 1996")
+                    act_name = title
+                    
+                    # Parse content to extract sections properly
+                    # UK legislation format: "Section X. Text..." or "X. Text..." or "Part X Section Y"
+                    import re
+                    
+                    # Pattern to find section markers: "1. ", "Section 1", "Part I", etc.
+                    section_pattern = r'(?:Section|S\.|S)\s*(\d+[A-Za-z]?)[\.:]\s*|^(\d+[A-Za-z]?)[\.:]\s+|^Part\s+([IVX]+|[\d]+)\s+|^PART\s+([IVX]+|[\d]+)\s+'
+                    
+                    # Split content by section markers
+                    section_matches = list(re.finditer(section_pattern, content, re.MULTILINE))
+                    
+                    if section_matches:
+                        # Create chunks for each section
+                        for i, match in enumerate(section_matches):
+                            start_pos = match.start()
+                            end_pos = section_matches[i + 1].start() if i + 1 < len(section_matches) else len(content)
+                            
+                            section_text = content[start_pos:end_pos].strip()
+                            if not section_text or len(section_text) < 50:  # Skip very short sections
+                                continue
+                            
+                            # Extract section number from match
+                            section_num = match.group(1) or match.group(2) or match.group(3) or match.group(4)
+                            if not section_num:
+                                continue
+                            
+                            # Skip "Section 0" - doesn't exist
+                            if section_num == "0" or section_num == "0A":
+                                continue
+                            
+                            # Extract section title (first line or first sentence)
+                            section_title = section_text.split('\n')[0].strip()[:100]
+                            if not section_title:
+                                section_title = section_text.split('.')[0].strip()[:100]
+                            
+                            # Create chunk with proper section metadata
+                            chunk = DocumentChunk(
+                                chunk_id=f"json_{Path(file_path).stem}_s{section_num}",
+                                text=section_text,
+                                metadata=DocumentMetadata(
+                                    title=f"{act_name} - Section {section_num}",
+                                    source=act_name,  # Use Act name as source
+                                    jurisdiction="UK",
+                                    document_type="Legislation",
+                                    url=url,
+                                    section=f"Section {section_num}"  # Proper section identifier
+                                ),
+                                chunk_index=int(re.findall(r'\d+', section_num)[0]) if re.findall(r'\d+', section_num) else i,
+                                start_char=start_pos,
+                                end_char=end_pos
+                            )
+                            chunks.append(chunk)
+                    else:
+                        # If no sections found, chunk by paragraphs (fallback)
+                        paragraphs = content.split('\n\n')
+                        for idx, para in enumerate(paragraphs):
+                            para = para.strip()
+                            if para and len(para) > 100:
                                 chunk = DocumentChunk(
-                                    chunk_id=f"json_{Path(file_path).stem}_section_{idx}",
-                                    text=section_text.strip(),
+                                    chunk_id=f"json_{Path(file_path).stem}_para_{idx}",
+                                    text=para,
                                     metadata=DocumentMetadata(
-                                        title=title,
-                                        source="UK Legislation",
+                                        title=act_name,
+                                        source=act_name,
                                         jurisdiction="UK",
                                         document_type="Legislation",
-                                        url=url,
-                                        section=section if isinstance(section, str) else str(section)
+                                        url=url
                                     ),
                                     chunk_index=idx,
                                     start_char=0,
-                                    end_char=len(section_text)
+                                    end_char=len(para)
                                 )
                                 chunks.append(chunk)
-                    else:
-                        # Single chunk for entire content
-                        if content.strip():
-                            chunk = DocumentChunk(
-                                chunk_id=f"json_{Path(file_path).stem}",
-                                text=content.strip(),
-                                metadata=DocumentMetadata(
-                                    title=title,
-                                    source="UK Legislation",
-                                    jurisdiction="UK",
-                                    document_type="Legislation",
-                                    url=url
-                                ),
-                                chunk_index=0,
-                                start_char=0,
-                                end_char=len(content)
-                            )
-                            chunks.append(chunk)
+                    
+                    # If still no chunks, create one for entire content
+                    if not chunks and content.strip():
+                        chunk = DocumentChunk(
+                            chunk_id=f"json_{Path(file_path).stem}",
+                            text=content.strip(),
+                            metadata=DocumentMetadata(
+                                title=act_name,
+                                source=act_name,
+                                jurisdiction="UK",
+                                document_type="Legislation",
+                                url=url
+                            ),
+                            chunk_index=0,
+                            start_char=0,
+                            end_char=len(content)
+                        )
+                        chunks.append(chunk)
                 else:
                     # Generic JSON - convert to text
                     text = json.dumps(data, indent=2)

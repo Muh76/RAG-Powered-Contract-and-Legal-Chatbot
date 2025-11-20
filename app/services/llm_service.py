@@ -38,60 +38,88 @@ class LLMService:
         mode: str = "solicitor"
     ) -> Dict[str, Any]:
         """Generate a legal answer with citations based on retrieved chunks"""
-        # Prepare context from retrieved chunks
+            # Prepare context from retrieved chunks with source IDs
         context_parts = []
         citations = []
         
         for i, chunk in enumerate(retrieved_chunks):
-            context_parts.append(f"[{i+1}] {chunk.get('text', '')}")
+            source_id = i + 1
+            chunk_text = chunk.get('text', '')
+            metadata = chunk.get('metadata', {})
+            if isinstance(metadata, dict):
+                title = metadata.get('title', chunk.get('title', 'Unknown Title'))
+                section = metadata.get('section', chunk.get('section', ''))
+                act_name = title if 'Act' in title else metadata.get('source', 'Unknown')
+            else:
+                title = chunk.get('title', 'Unknown Title')
+                section = chunk.get('section', '')
+                act_name = title if 'Act' in title else 'Unknown'
+            
+            # Format: [source_id] Title - Section (if available) - Text
+            section_info = f" - {section}" if section and section != 'Unknown' else ""
+            context_parts.append(f"[{source_id}] {act_name}{section_info}\n{chunk_text}")
+            
             citations.append({
-                "id": i + 1,
-                "chunk_id": chunk.get('chunk_id', f'chunk_{i+1}'),
-                "section": chunk.get('section', 'Unknown Section'),
-                "title": chunk.get('metadata', {}).get('title', 'Unknown Title'),
-                "text_snippet": chunk.get('text', '')[:200] + "..." if len(chunk.get('text', '')) > 200 else chunk.get('text', '')
+                "id": source_id,
+                "chunk_id": chunk.get('chunk_id', f'chunk_{source_id}'),
+                "section": section,
+                "title": act_name,
+                "text_snippet": chunk_text[:200] + "..." if len(chunk_text) > 200 else chunk_text
             })
         
         context = "\n\n".join(context_parts)
         
-        # Choose prompt template based on mode with STRICT citation enforcement
+        # Choose prompt template based on mode with STRICT source-only enforcement
         if mode == "solicitor":
-            system_prompt = """You are a legal assistant specializing in UK law. CRITICAL RULES:
-1. Answer ONLY using the provided legal sources - never use prior knowledge
-2. Use precise legal terminology and cite specific sections/Acts
-3. MANDATORY: Cite EVERY sentence with [source_id] format (e.g., [1], [2])
-4. Each factual claim MUST have a citation - uncited claims are FORBIDDEN
-5. If sources are insufficient, state: "The provided sources do not contain sufficient information"
-6. Include Act name and Section number when available in source metadata
-7. Maintain professional legal language"""
+            system_prompt = """You are a legal assistant specializing in UK law. CRITICAL ANTI-HALLUCINATION RULES:
+1. Answer ONLY using the exact text and information from the provided sources - NEVER use prior knowledge or training data
+2. If information is not in the sources, DO NOT include it - say "not found in sources" instead
+3. Your answer length must be proportional to the source material - if sources are short, keep answer short
+4. Use precise legal terminology and cite specific sections/Acts
+5. MANDATORY: Cite EVERY sentence with simple [source_id] format ONLY (e.g., [1], [2]) - NO complex formats like [3, Section X]
+6. Each factual claim MUST have a citation - uncited claims are FORBIDDEN
+7. If sources are insufficient, state: "The provided sources do not contain sufficient information to answer this question completely"
+8. Include Act name and Section number when explicitly mentioned in source metadata
+9. Maintain professional legal language
+10. DO NOT create fictional sections, Act names, or legal provisions"""
         else:  # public mode
-            system_prompt = """You are a legal assistant helping the general public understand UK law. CRITICAL RULES:
-1. Answer using ONLY the provided legal sources - never use prior knowledge
-2. Explain legal concepts clearly without jargon
-3. MANDATORY: Cite EVERY sentence with [source_id] format (e.g., [1], [2])
-4. Each factual claim MUST have a citation - uncited claims are FORBIDDEN
-5. If sources are insufficient, state: "The provided sources do not contain sufficient information"
-6. Include Act name and Section number when available in source metadata
-7. Use accessible, everyday language"""
+            system_prompt = """You are a legal assistant helping the general public understand UK law. CRITICAL ANTI-HALLUCINATION RULES:
+1. Answer using ONLY the exact text and information from the provided sources - NEVER use prior knowledge or training data
+2. If information is not in the sources, DO NOT include it - say "not found in sources" instead
+3. Your answer length must be proportional to the source material - if sources are short, keep answer short
+4. Explain legal concepts clearly without jargon
+5. MANDATORY: Cite EVERY sentence with simple [source_id] format ONLY (e.g., [1], [2]) - NO complex formats like [3, Section X]
+6. Each factual claim MUST have a citation - uncited claims are FORBIDDEN
+7. If sources are insufficient, state: "The provided sources do not contain sufficient information to answer this question completely"
+8. Include Act name and Section number when explicitly mentioned in source metadata
+9. Use accessible, everyday language
+10. DO NOT create fictional sections, Act names, or legal provisions"""
         
-        user_prompt = f"""SOURCES:
+        user_prompt = f"""SOURCES (numbered [1], [2], etc.):
 {context}
 
 QUESTION: {query}
 
-STRICT INSTRUCTIONS:
-1. Answer using ONLY the provided sources above
-2. Cite EVERY sentence with [source_id] format (e.g., "Employment rights include... [1]" or "According to Section 1 [2], employers must...")
-3. DO NOT make any claims without citations - this is critical for a legal chatbot
-4. If a source mentions a specific Act and Section, include it: "Employment Rights Act 1996, Section 1 [1] states..."
-5. If sources don't contain enough information, say: "The provided sources do not contain sufficient information to answer this question completely"
-6. Format: [source_id] must appear at the end of each sentence with a factual claim
+STRICT ANTI-HALLUCINATION INSTRUCTIONS:
+1. Answer using ONLY the exact information from the numbered sources above - NEVER add information from your training data
+2. Your answer MUST be shorter or equal to the total length of the sources - if sources are 3 paragraphs, answer should be 3 paragraphs or less
+3. Cite EVERY sentence with simple [source_id] format ONLY:
+   - CORRECT: "Employers must provide written statements [1]."
+   - CORRECT: "The Employment Rights Act, Section 1 [1] requires..."
+   - WRONG: "[1, Section 1]" or "[3, Sections 17-22]" - ONLY use [1], [2], etc.
+4. DO NOT make any claims without citations - this will cause rejection
+5. If a source explicitly mentions an Act name and Section number, you may include it: "Employment Rights Act 1996, Section 1 [1]"
+6. DO NOT invent section numbers, Act names, or legal provisions not in the sources
+7. If sources don't contain enough information, say EXACTLY: "The provided sources do not contain sufficient information to answer this question completely"
+8. DO NOT expand on topics not covered in the sources - keep your answer proportional to source material
 
-EXAMPLE GOOD RESPONSE:
-"The Employment Rights Act 1996, Section 1 [1] requires employers to provide written statements. Section 13 [2] protects against unlawful wage deductions. These rights apply to all employees in the UK [1][2]."
+EXAMPLE GOOD RESPONSE (when sources are short):
+"The Employment Rights Act 1996, Section 1 [1] requires employers to provide written statements [1]."
 
 EXAMPLE BAD RESPONSE (DO NOT DO THIS):
-"Employment rights include written statements and wage protection. (No citations = FORBIDDEN)"""
+"Employment rights include many provisions such as written statements, wage protection, leave rights, etc. [1]" <- This adds information not in sources!
+"[1, Section 1]" <- Wrong format, use [1] only!
+"Employment rights include..." <- No citation = FORBIDDEN!"""
         
         try:
             response = self.client.chat.completions.create(
