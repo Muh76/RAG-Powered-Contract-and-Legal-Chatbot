@@ -46,8 +46,8 @@ class RAGService:
         self.semantic_retriever = None
         self.hybrid_retriever = None
         
-        # Explainability component
-        self.explainability_analyzer = ExplainabilityAnalyzer()
+        # Explainability component - Initialize lazily to avoid PyTorch imports
+        self.explainability_analyzer = None
         
         self._initialize()
     
@@ -462,19 +462,36 @@ class RAGService:
         Returns:
             List of results with explainability fields added
         """
-        if highlight_sources:
-            # Add highlighted text
-            results = self.explainability_analyzer.highlight_sources(results, query, highlight_tag="**")
+        # Initialize explainability analyzer lazily to avoid PyTorch imports at startup
+        if self.explainability_analyzer is None:
+            try:
+                self.explainability_analyzer = ExplainabilityAnalyzer()
+            except Exception as e:
+                logger.warning(f"Could not initialize explainability analyzer: {e}")
+                # Return results without explainability if analyzer fails
+                return results
         
-        if include_explanation:
-            # Add explanations
-            explanations = self.explainability_analyzer.explain_results(results, query)
+        if self.explainability_analyzer is None:
+            # Can't add explainability, return results as-is
+            return results
+        
+        try:
+            if highlight_sources:
+                # Add highlighted text
+                results = self.explainability_analyzer.highlight_sources(results, query, highlight_tag="**")
             
-            for result, explanation in zip(results, explanations):
-                result["explanation"] = explanation.explanation
-                result["confidence"] = explanation.confidence
-                result["matched_terms"] = explanation.matched_terms
-                result["matched_spans"] = explanation.matched_text_spans
+            if include_explanation:
+                # Add explanations
+                explanations = self.explainability_analyzer.explain_results(results, query)
+                
+                for result, explanation in zip(results, explanations):
+                    result["explanation"] = explanation.explanation
+                    result["confidence"] = explanation.confidence
+                    result["matched_terms"] = explanation.matched_terms
+                    result["matched_spans"] = explanation.matched_text_spans
+        except Exception as e:
+            logger.warning(f"Explainability processing failed: {e}")
+            # Return results without explainability if processing fails
         
         return results
     
