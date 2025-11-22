@@ -77,10 +77,10 @@ class RAGService:
             max_length=512
         )
         
-            # CRITICAL FIX: Use environment variable to disable embeddings if they cause segfaults
-            # Set DISABLE_EMBEDDINGS=1 to skip embedding initialization completely
-            # NEVER create EmbeddingGenerator if DISABLE_EMBEDDINGS=1 to prevent ANY PyTorch import
-            if os.getenv("DISABLE_EMBEDDINGS", "").lower() in ("1", "true", "yes"):
+        # CRITICAL FIX: Use environment variable to disable embeddings if they cause segfaults
+        # Set DISABLE_EMBEDDINGS=1 to skip embedding initialization completely
+        # NEVER create EmbeddingGenerator if DISABLE_EMBEDDINGS=1 to prevent ANY PyTorch import
+        if os.getenv("DISABLE_EMBEDDINGS", "").lower() in ("1", "true", "yes"):
                 logger.warning("⚠️ Embeddings disabled via DISABLE_EMBEDDINGS environment variable")
                 logger.warning("Will use TF-IDF fallback only")
                 logger.warning("⚠️ NOT creating EmbeddingGenerator to prevent PyTorch imports")
