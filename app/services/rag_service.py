@@ -81,11 +81,11 @@ class RAGService:
         # Set DISABLE_EMBEDDINGS=1 to skip embedding initialization completely
         # NEVER create EmbeddingGenerator if DISABLE_EMBEDDINGS=1 to prevent ANY PyTorch import
         if os.getenv("DISABLE_EMBEDDINGS", "").lower() in ("1", "true", "yes"):
-                logger.warning("⚠️ Embeddings disabled via DISABLE_EMBEDDINGS environment variable")
-                logger.warning("Will use TF-IDF fallback only")
-                logger.warning("⚠️ NOT creating EmbeddingGenerator to prevent PyTorch imports")
-                self.embedding_gen = None
-            else:
+            logger.warning("⚠️ Embeddings disabled via DISABLE_EMBEDDINGS environment variable")
+            logger.warning("Will use TF-IDF fallback only")
+            logger.warning("⚠️ NOT creating EmbeddingGenerator to prevent PyTorch imports")
+            self.embedding_gen = None
+        else:
                 try:
                     logger.info("Initializing embedding generator...")
                     # CRITICAL: Only create EmbeddingGenerator if not disabled
