@@ -16,11 +16,13 @@ sys.path.insert(0, str(project_root))
 
 from retrieval.embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
 from retrieval.bm25_retriever import BM25Retriever
-from retrieval.semantic_retriever import SemanticRetriever
-from retrieval.hybrid_retriever import AdvancedHybridRetriever, FusionStrategy
+# CRITICAL FIX: Make PyTorch-dependent imports lazy to prevent segfaults
+# Don't import these at module level - import only when needed
+# from retrieval.semantic_retriever import SemanticRetriever
+# from retrieval.hybrid_retriever import AdvancedHybridRetriever, FusionStrategy
+# from retrieval.rerankers.cross_encoder_reranker import CrossEncoderReranker
+# from retrieval.explainability import ExplainabilityAnalyzer
 from retrieval.metadata_filter import MetadataFilter
-from retrieval.rerankers.cross_encoder_reranker import CrossEncoderReranker
-from retrieval.explainability import ExplainabilityAnalyzer
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -46,7 +48,7 @@ class RAGService:
         self.semantic_retriever = None
         self.hybrid_retriever = None
         
-        # Explainability component - Initialize lazily to avoid PyTorch imports
+        # Explainability component - Will be initialized lazily when needed
         self.explainability_analyzer = None
         
         self._initialize()
@@ -118,10 +120,20 @@ class RAGService:
             logger.info("✅ RAG service fully initialized")
     
     def _initialize_hybrid_retriever(self):
-        """Initialize hybrid retriever components"""
+        """Initialize hybrid retriever components - with lazy imports to prevent PyTorch segfaults"""
         try:
             if not self.chunk_metadata or len(self.chunk_metadata) == 0:
                 logger.warning("Cannot initialize hybrid retriever: no chunk metadata available")
+                return
+            
+            # CRITICAL FIX: Only import PyTorch-dependent modules when actually needed
+            # This prevents PyTorch from being imported at module load time
+            try:
+                from retrieval.semantic_retriever import SemanticRetriever
+                from retrieval.hybrid_retriever import AdvancedHybridRetriever, FusionStrategy
+            except ImportError as e:
+                logger.warning(f"Could not import hybrid retriever components: {e}")
+                self.hybrid_retriever = None
                 return
             
             # Extract documents for BM25
@@ -131,16 +143,29 @@ class RAGService:
             self.bm25_retriever = BM25Retriever(documents)
             logger.info("✅ BM25 retriever initialized")
             
-            # Initialize semantic retriever
-            self.semantic_retriever = SemanticRetriever()
-            if not self.semantic_retriever.is_ready():
-                logger.warning("Semantic retriever not ready, hybrid search will have limited functionality")
+            # Initialize semantic retriever (only if embeddings available)
+            if self.embedding_gen is None or (hasattr(self.embedding_gen, 'model') and self.embedding_gen.model is None):
+                logger.warning("Cannot initialize semantic retriever: no embeddings available")
+                self.hybrid_retriever = None
                 return
             
-            # Initialize reranker if enabled
+            try:
+                self.semantic_retriever = SemanticRetriever()
+                if not self.semantic_retriever.is_ready():
+                    logger.warning("Semantic retriever not ready, hybrid search will have limited functionality")
+                    self.hybrid_retriever = None
+                    return
+            except Exception as e:
+                logger.warning(f"Failed to initialize semantic retriever: {e}")
+                self.hybrid_retriever = None
+                return
+            
+            # Initialize reranker if enabled (lazy import to prevent PyTorch crash)
             reranker = None
             if settings.ENABLE_RERANKING:
                 try:
+                    # Lazy import - only when reranking is actually enabled
+                    from retrieval.rerankers.cross_encoder_reranker import CrossEncoderReranker
                     reranker = CrossEncoderReranker(
                         model_name=settings.RERANKER_MODEL,
                         batch_size=settings.RERANKER_BATCH_SIZE
@@ -465,11 +490,15 @@ class RAGService:
         # Initialize explainability analyzer lazily to avoid PyTorch imports at startup
         if self.explainability_analyzer is None:
             try:
+                # Lazy import - only import when actually needed
+                from retrieval.explainability import ExplainabilityAnalyzer
                 self.explainability_analyzer = ExplainabilityAnalyzer()
+            except ImportError as e:
+                logger.warning(f"Could not import explainability analyzer: {e}")
+                self.explainability_analyzer = None
             except Exception as e:
                 logger.warning(f"Could not initialize explainability analyzer: {e}")
-                # Return results without explainability if analyzer fails
-                return results
+                self.explainability_analyzer = None
         
         if self.explainability_analyzer is None:
             # Can't add explainability, return results as-is
