@@ -75,22 +75,31 @@ class RAGService:
             max_length=512
         )
         
-        try:
-            logger.info("Initializing embedding generator...")
-            self.embedding_gen = EmbeddingGenerator(embedding_config)
-            if self.embedding_gen.model is not None:
-                logger.info("✅ Embedding generator initialized successfully")
-            else:
-                logger.warning("⚠️ Embedding model is None - falling back to TF-IDF")
+            # CRITICAL FIX: Use environment variable to disable embeddings if they cause segfaults
+            # Set DISABLE_EMBEDDINGS=1 to skip embedding initialization completely
+            if os.getenv("DISABLE_EMBEDDINGS", "").lower() in ("1", "true", "yes"):
+                logger.warning("⚠️ Embeddings disabled via DISABLE_EMBEDDINGS environment variable")
+                logger.warning("Will use TF-IDF fallback only")
                 self.embedding_gen = None
-        except SystemExit:
-            logger.error("❌ Embedding generator caused process exit (segfault)")
-            logger.warning("Continuing without embeddings - will use TF-IDF fallback")
-            self.embedding_gen = None
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to initialize embedding generator: {e}")
-            logger.warning("Falling back to TF-IDF search. Ensure venv is activated and PyTorch is installed.")
-            self.embedding_gen = None
+            else:
+                try:
+                    logger.info("Initializing embedding generator...")
+                    self.embedding_gen = EmbeddingGenerator(embedding_config)
+                    if self.embedding_gen.model is not None:
+                        logger.info("✅ Embedding generator initialized successfully")
+                    else:
+                        logger.warning("⚠️ Embedding model is None - falling back to TF-IDF")
+                        self.embedding_gen = None
+                except SystemExit:
+                    logger.error("❌ Embedding generator caused process exit (segfault)")
+                    logger.warning("Continuing without embeddings - will use TF-IDF fallback")
+                    logger.warning("💡 To permanently disable embeddings, set DISABLE_EMBEDDINGS=1")
+                    self.embedding_gen = None
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to initialize embedding generator: {e}")
+                    logger.warning("Falling back to TF-IDF search. Ensure venv is activated and PyTorch is installed.")
+                    logger.warning("💡 To permanently disable embeddings, set DISABLE_EMBEDDINGS=1")
+                    self.embedding_gen = None
         
         # Step 3: Initialize hybrid retriever if requested (only if we have chunks)
         if self.use_hybrid and self.chunk_metadata:

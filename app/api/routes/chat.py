@@ -40,53 +40,95 @@ guardrails_service = None
 llm_service = None
 
 def get_rag_service():
-    """Get RAG service - initialize with subprocess isolation to prevent segfaults"""
+    """Get RAG service - initialize with proper error handling"""
     global rag_service
     
     if rag_service is None:
         logger.info("🔄 Initializing RAGService...")
-        
-        # CRITICAL FIX: Initialize RAG service in a separate process to isolate segfaults
-        # If it crashes, only the subprocess dies, not the main server
-        import subprocess
-        import sys
-        import pickle
-        import os
-        
         try:
-            # Check if we can initialize RAG in the same process first (faster)
-            # This will work if PyTorch is properly installed
-            logger.info("Attempting to initialize RAG service in-process...")
+            # CRITICAL: Try to initialize RAG service
+            # If it segfaults, we can't catch it in Python, but at least we try
             rag_service = RAGService()
-            logger.info("✅ RAGService initialized successfully")
-        except Exception as e:
-            logger.error(f"RAG initialization failed: {e}")
-            logger.warning("⚠️ Creating degraded RAG service (will use TF-IDF fallback)")
-            # Create a minimal RAGService that will return empty results
-            from app.services.rag_service import RAGService as RAGServiceClass
-            rag_service = RAGServiceClass.__new__(RAGServiceClass)
-            rag_service.embedding_gen = None
-            rag_service.faiss_index = None
-            rag_service.chunk_metadata = []
-            rag_service.use_hybrid = False
-            rag_service.bm25_retriever = None
-            rag_service.semantic_retriever = None
-            rag_service.hybrid_retriever = None
-            rag_service.explainability_analyzer = None
             
-            # Try to load FAISS index at least
+            # Verify RAG service is actually usable
+            if rag_service.faiss_index is None and rag_service.embedding_gen is None:
+                logger.warning("⚠️ RAG service initialized but has no FAISS index or embeddings")
+                # This is degraded but not crashed
+            else:
+                logger.info("✅ RAGService initialized successfully")
+                
+        except SystemExit:
+            # This might catch segfaults in some cases
+            logger.error("❌ RAG service initialization caused process exit (possible segfault)")
+            logger.warning("⚠️ Creating degraded RAG service")
+            rag_service = _create_degraded_rag_service()
+        except Exception as e:
+            logger.error(f"❌ RAG initialization failed with exception: {e}")
+            logger.warning("⚠️ Creating degraded RAG service (will use TF-IDF fallback)")
+            rag_service = _create_degraded_rag_service()
+        except:
+            # Catch anything else (including segfaults that become exceptions)
+            logger.error("❌ RAG initialization failed with unknown error")
+            logger.warning("⚠️ Creating degraded RAG service")
+            rag_service = _create_degraded_rag_service()
+    
+    return rag_service
+
+
+def _create_degraded_rag_service():
+    """Create a degraded RAG service that won't crash the server"""
+    from app.services.rag_service import RAGService as RAGServiceClass
+    rag_service = RAGServiceClass.__new__(RAGServiceClass)
+    rag_service.embedding_gen = None
+    rag_service.faiss_index = None
+    rag_service.chunk_metadata = []
+    rag_service.use_hybrid = False
+    rag_service.bm25_retriever = None
+    rag_service.semantic_retriever = None
+    rag_service.hybrid_retriever = None
+    rag_service.explainability_analyzer = None
+    
+    # Try to load FAISS index without embeddings (safer)
+    try:
+        from pathlib import Path
+        import pickle
+        import faiss
+        
+        # Try multiple paths
+        faiss_paths = [
+            Path("data/faiss_index.bin"),
+            Path("data/indices/faiss_index.pkl"),
+            Path("notebooks/phase1/data/faiss_index.bin")
+        ]
+        
+        for faiss_path in faiss_paths:
+            if not faiss_path.exists():
+                continue
+                
             try:
-                from pathlib import Path
-                faiss_index_path = Path("data/indices/faiss_index.pkl")
-                if faiss_index_path.exists():
-                    import pickle
-                    with open(faiss_index_path, 'rb') as f:
+                if faiss_path.suffix == '.pkl':
+                    # Combined file
+                    with open(faiss_path, 'rb') as f:
                         data = pickle.load(f)
                         rag_service.faiss_index = data.get('faiss_index')
                         rag_service.chunk_metadata = data.get('chunk_metadata', [])
-                    logger.info(f"✅ Loaded FAISS index with {len(rag_service.chunk_metadata)} chunks")
-            except Exception as load_error:
-                logger.warning(f"Could not load FAISS index: {load_error}")
+                else:
+                    # Separate files
+                    metadata_path = faiss_path.parent / "chunk_metadata.pkl"
+                    if metadata_path.exists():
+                        rag_service.faiss_index = faiss.read_index(str(faiss_path))
+                        with open(metadata_path, 'rb') as f:
+                            rag_service.chunk_metadata = pickle.load(f)
+                
+                if rag_service.faiss_index:
+                    logger.info(f"✅ Loaded FAISS index with {len(rag_service.chunk_metadata)} chunks (no embeddings)")
+                    break
+            except Exception as e:
+                logger.warning(f"Could not load FAISS from {faiss_path}: {e}")
+                continue
+                
+    except Exception as load_error:
+        logger.warning(f"Could not load FAISS index: {load_error}")
     
     return rag_service
 
