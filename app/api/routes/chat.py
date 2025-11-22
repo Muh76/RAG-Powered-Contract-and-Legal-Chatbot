@@ -267,12 +267,20 @@ async def chat(
             loop = asyncio.get_event_loop()
             
             # Prepare search function with private corpus if available
-            # CRITICAL: Enable hybrid search for better retrieval quality
+            # CRITICAL FIX: Only use hybrid search if embeddings are available
+            # If DISABLE_EMBEDDINGS=1, embeddings are None, so hybrid search will fail
+            use_hybrid = False
+            if rag.embedding_gen is not None and hasattr(rag.embedding_gen, 'model') and rag.embedding_gen.model is not None:
+                use_hybrid = True  # Enable hybrid search only if embeddings work
+                logger.info("Using hybrid search (embeddings available)")
+            else:
+                logger.info("Using TF-IDF search (embeddings not available)")
+            
             def search_func():
                 return rag.search(
                     query=request.query,
                     top_k=(request.top_k or 5) * 2,  # Retrieve more initially for filtering
-                    use_hybrid=True,  # Enable hybrid search (BM25 + semantic + reranker)
+                    use_hybrid=use_hybrid,  # Only use hybrid if embeddings available
                     user_id=current_user.id if include_private_corpus else None,
                     include_private_corpus=include_private_corpus and private_corpus_results is not None,
                     private_corpus_results=private_corpus_results
