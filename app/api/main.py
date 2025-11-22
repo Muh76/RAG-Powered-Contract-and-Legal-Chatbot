@@ -21,25 +21,10 @@ async def lifespan(app: FastAPI):
     # Startup
     setup_logging()
     
-    # CRITICAL FIX: Pre-initialize RAG service at startup to detect crashes early
-    # If RAG crashes, the server will restart and we'll know it's unavailable
-    # This prevents crashes during user requests
-    logger.info("🔄 Attempting to initialize RAG service at startup...")
-    try:
-        # Import here to avoid circular imports
-        from app.services.rag_service import RAGService
-        # Try to initialize RAG service
-        rag_service = RAGService()
-        logger.info("✅ RAGService initialized successfully at startup")
-        # Store in app state for later use
-        app.state.rag_service = rag_service
-        app.state.rag_available = True
-    except Exception as e:
-        logger.error(f"❌ RAGService initialization failed at startup: {e}")
-        logger.warning("⚠️ Chat functionality will be limited. RAG service unavailable.")
-        app.state.rag_service = None
-        app.state.rag_available = False
-    
+    # CRITICAL FIX: Don't initialize RAG service at startup - it causes segfaults and hangs
+    # RAG service will be initialized lazily on first request
+    # If it crashes, it will be handled gracefully in the chat endpoint
+    logger.info("🔄 Services will be initialized on first request (lazy loading)")
     logger.info("✅ Application startup complete")
     yield
     
