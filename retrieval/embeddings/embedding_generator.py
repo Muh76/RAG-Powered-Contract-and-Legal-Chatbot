@@ -25,6 +25,11 @@ def _check_pytorch_available() -> bool:
     
     Uses subprocess to isolate segfaults - if PyTorch crashes, only the subprocess dies.
     """
+    # CRITICAL FIX: Check DISABLE_EMBEDDINGS FIRST - prevents ANY PyTorch check
+    if os.getenv("DISABLE_EMBEDDINGS", "").lower() in ("1", "true", "yes"):
+        logger.warning("Embeddings disabled via DISABLE_EMBEDDINGS - skipping PyTorch check")
+        return False
+    
     import subprocess
     import sys
     
