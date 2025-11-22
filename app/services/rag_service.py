@@ -526,13 +526,8 @@ class RAGService:
     
     def _semantic_search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
         """Original semantic search method (backward compatible)"""
-        # Check if service is properly initialized
-        if self.faiss_index is None or len(self.chunk_metadata) == 0:
-            logger.error("Vector store not loaded. Cannot search. Run: python scripts/ingest_data.py")
-            return []
-        
-        # Check if embedding generator is available
-        # If not, use TF-IDF fallback for keyword-based search
+        # CRITICAL FIX: Check embeddings FIRST before doing anything else
+        # This prevents PyTorch from being imported if embeddings are disabled
         if self.embedding_gen is None or (hasattr(self.embedding_gen, 'model') and self.embedding_gen.model is None):
             logger.warning("Embedding model not available. Using TF-IDF keyword search fallback.")
             try:
@@ -540,6 +535,11 @@ class RAGService:
             except Exception as tfidf_error:
                 logger.error(f"TF-IDF fallback also failed: {tfidf_error}", exc_info=True)
                 return []
+        
+        # Check if service is properly initialized (only if we're using embeddings)
+        if self.faiss_index is None or len(self.chunk_metadata) == 0:
+            logger.error("Vector store not loaded. Cannot search. Run: python scripts/ingest_data.py")
+            return []
         
         try:
             # Generate query embedding - WRAP IN TRY-CATCH TO PREVENT CRASH
