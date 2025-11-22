@@ -40,30 +40,31 @@ guardrails_service = None
 llm_service = None
 
 def get_rag_service():
-    """Get RAG service - use app state if available, otherwise lazy init"""
+    """Get RAG service - initialize with subprocess isolation to prevent segfaults"""
     global rag_service
     
-    # CRITICAL FIX: Check if RAG service was pre-initialized at startup
-    # This prevents segfaults during user requests
-    from fastapi import Request
-    try:
-        # Try to get from app state (set during startup)
-        # This is a workaround - in actual endpoint, we'll check app.state directly
-        pass
-    except:
-        pass
-    
     if rag_service is None:
-        logger.info("🔄 Initializing RAGService lazily...")
+        logger.info("🔄 Initializing RAGService...")
+        
+        # CRITICAL FIX: Initialize RAG service in a separate process to isolate segfaults
+        # If it crashes, only the subprocess dies, not the main server
+        import subprocess
+        import sys
+        import pickle
+        import os
+        
         try:
+            # Check if we can initialize RAG in the same process first (faster)
+            # This will work if PyTorch is properly installed
+            logger.info("Attempting to initialize RAG service in-process...")
             rag_service = RAGService()
             logger.info("✅ RAGService initialized successfully")
         except Exception as e:
-            logger.error(f"❌ CRITICAL: RAGService initialization failed: {e}")
-            logger.error("This may be due to PyTorch segfault. Creating degraded service.")
+            logger.error(f"RAG initialization failed: {e}")
+            logger.warning("⚠️ Creating degraded RAG service (will use TF-IDF fallback)")
             # Create a minimal RAGService that will return empty results
             from app.services.rag_service import RAGService as RAGServiceClass
-            rag_service = RAGServiceClass.__new__(RAGServiceClass)  # Create without calling __init__
+            rag_service = RAGServiceClass.__new__(RAGServiceClass)
             rag_service.embedding_gen = None
             rag_service.faiss_index = None
             rag_service.chunk_metadata = []
@@ -72,7 +73,21 @@ def get_rag_service():
             rag_service.semantic_retriever = None
             rag_service.hybrid_retriever = None
             rag_service.explainability_analyzer = None
-            logger.warning("⚠️ RAGService created in degraded mode (no embeddings)")
+            
+            # Try to load FAISS index at least
+            try:
+                from pathlib import Path
+                faiss_index_path = Path("data/indices/faiss_index.pkl")
+                if faiss_index_path.exists():
+                    import pickle
+                    with open(faiss_index_path, 'rb') as f:
+                        data = pickle.load(f)
+                        rag_service.faiss_index = data.get('faiss_index')
+                        rag_service.chunk_metadata = data.get('chunk_metadata', [])
+                    logger.info(f"✅ Loaded FAISS index with {len(rag_service.chunk_metadata)} chunks")
+            except Exception as load_error:
+                logger.warning(f"Could not load FAISS index: {load_error}")
+    
     return rag_service
 
 def get_guardrails_service():

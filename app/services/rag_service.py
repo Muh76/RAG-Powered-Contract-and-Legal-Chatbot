@@ -52,44 +52,61 @@ class RAGService:
         self._initialize()
     
     def _initialize(self):
-        """Initialize RAG components"""
+        """Initialize RAG components with robust error handling to prevent segfaults"""
+        # CRITICAL FIX: Initialize components separately to isolate failures
+        # This prevents one component failure from crashing the entire service
+        
+        # Step 1: Load FAISS index first (safer, doesn't require PyTorch)
         try:
-            # Initialize embedding generator
-            embedding_config = EmbeddingConfig(
-                model_name=settings.EMBEDDING_MODEL,
-                dimension=settings.EMBEDDING_DIMENSION,
-                batch_size=settings.EMBEDDING_BATCH_SIZE,
-                max_length=512
-            )
-            
-            # Initialize embedding generator
-            # Note: Ensure you're using the project venv (not system Python)
-            # System Python may have broken PyTorch - venv has working PyTorch 2.2.2
-            try:
-                self.embedding_gen = EmbeddingGenerator(embedding_config)
-                if self.embedding_gen.model is not None:
-                    logger.info("✅ Embedding generator initialized successfully")
-                else:
-                    logger.warning("⚠️ Embedding model is None - falling back to TF-IDF")
-                    self.embedding_gen = None
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to initialize embedding generator: {e}")
-                logger.warning("Falling back to TF-IDF search. Ensure venv is activated and PyTorch is installed.")
-                self.embedding_gen = None
-            
-            # Load FAISS index and metadata
+            logger.info("Loading FAISS index and metadata...")
             self._load_vector_store()
-            
-            # Initialize hybrid retriever if requested
-            if self.use_hybrid:
-                self._initialize_hybrid_retriever()
-            
+            logger.info(f"✅ Loaded {len(self.chunk_metadata)} chunks from FAISS index")
         except Exception as e:
-            logger.error(f"Error initializing RAG service: {e}")
-            # Don't raise - allow service to exist with limited functionality
-            self.embedding_gen = None
+            logger.error(f"Failed to load FAISS index: {e}")
             self.faiss_index = None
             self.chunk_metadata = []
+            # Continue anyway - can use TF-IDF fallback
+        
+        # Step 2: Initialize embedding generator (may cause segfault)
+        embedding_config = EmbeddingConfig(
+            model_name=settings.EMBEDDING_MODEL,
+            dimension=settings.EMBEDDING_DIMENSION,
+            batch_size=settings.EMBEDDING_BATCH_SIZE,
+            max_length=512
+        )
+        
+        try:
+            logger.info("Initializing embedding generator...")
+            self.embedding_gen = EmbeddingGenerator(embedding_config)
+            if self.embedding_gen.model is not None:
+                logger.info("✅ Embedding generator initialized successfully")
+            else:
+                logger.warning("⚠️ Embedding model is None - falling back to TF-IDF")
+                self.embedding_gen = None
+        except SystemExit:
+            logger.error("❌ Embedding generator caused process exit (segfault)")
+            logger.warning("Continuing without embeddings - will use TF-IDF fallback")
+            self.embedding_gen = None
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to initialize embedding generator: {e}")
+            logger.warning("Falling back to TF-IDF search. Ensure venv is activated and PyTorch is installed.")
+            self.embedding_gen = None
+        
+        # Step 3: Initialize hybrid retriever if requested (only if we have chunks)
+        if self.use_hybrid and self.chunk_metadata:
+            try:
+                self._initialize_hybrid_retriever()
+            except Exception as e:
+                logger.warning(f"Failed to initialize hybrid retriever: {e}")
+                self.hybrid_retriever = None
+        
+        # Final status check
+        if self.embedding_gen is None and self.faiss_index is None:
+            logger.warning("⚠️ RAG service initialized in degraded mode (no embeddings, no FAISS index)")
+        elif self.embedding_gen is None:
+            logger.warning("⚠️ RAG service initialized with FAISS but no embeddings (will use TF-IDF fallback)")
+        else:
+            logger.info("✅ RAG service fully initialized")
     
     def _initialize_hybrid_retriever(self):
         """Initialize hybrid retriever components"""
@@ -147,12 +164,14 @@ class RAGService:
             self.hybrid_retriever = None
     
     def _load_vector_store(self):
-        """Load FAISS index and chunk metadata"""
+        """Load FAISS index and chunk metadata with robust error handling"""
         # Try multiple possible paths
         possible_paths = [
+            project_root / "data" / "indices" / "faiss_index.pkl",
             project_root / "data" / "faiss_index.bin",
             project_root / "data" / "processed" / "faiss_index.bin",
             project_root / "notebooks" / "phase1" / "data" / "faiss_index.bin",
+            Path("data/indices/faiss_index.pkl"),
             Path("data/faiss_index.bin"),
             Path("notebooks/phase1/data/faiss_index.bin"),
             Path.cwd() / "data" / "faiss_index.bin"
@@ -164,17 +183,51 @@ class RAGService:
         for path in possible_paths:
             if path.exists():
                 faiss_path = path
-                metadata_path = path.parent / "chunk_metadata.pkl"
+                # Try both .pkl and separate metadata file
+                if path.suffix == '.pkl':
+                    metadata_path = path  # Combined file
+                else:
+                    metadata_path = path.parent / "chunk_metadata.pkl"
                 break
         
-        if faiss_path and faiss_path.exists() and metadata_path.exists():
+        # Check for combined .pkl file first
+        pkl_path = None
+        for path in possible_paths:
+            if path.exists() and path.suffix == '.pkl':
+                pkl_path = path
+                break
+        
+        if pkl_path:
+            # Load from combined .pkl file
             try:
-                self.faiss_index = faiss.read_index(str(faiss_path))
-                with open(metadata_path, "rb") as f:
-                    self.chunk_metadata = pickle.load(f)
-                logger.info(f"Loaded FAISS index with {self.faiss_index.ntotal} vectors from {faiss_path}")
+                with open(pkl_path, 'rb') as f:
+                    data = pickle.load(f)
+                    self.faiss_index = data.get('faiss_index')
+                    self.chunk_metadata = data.get('chunk_metadata', [])
+                if self.faiss_index:
+                    logger.info(f"✅ Loaded FAISS index from {pkl_path}: {self.faiss_index.ntotal} vectors, {len(self.chunk_metadata)} chunks")
+                else:
+                    logger.warning(f"⚠️  FAISS index is None in {pkl_path}")
+                    self.faiss_index = None
+                    self.chunk_metadata = []
             except Exception as e:
-                logger.error(f"Error loading vector store: {e}")
+                logger.error(f"❌ Error loading combined FAISS index from {pkl_path}: {e}")
+                self.faiss_index = None
+                self.chunk_metadata = []
+        elif faiss_path and faiss_path.exists():
+            # Load from separate files
+            if metadata_path and metadata_path.exists():
+                try:
+                    self.faiss_index = faiss.read_index(str(faiss_path))
+                    with open(metadata_path, "rb") as f:
+                        self.chunk_metadata = pickle.load(f)
+                    logger.info(f"✅ Loaded FAISS index with {self.faiss_index.ntotal} vectors from {faiss_path}")
+                except Exception as e:
+                    logger.error(f"❌ Error loading vector store: {e}")
+                    self.faiss_index = None
+                    self.chunk_metadata = []
+            else:
+                logger.warning(f"FAISS index found but metadata not found: {metadata_path}")
                 self.faiss_index = None
                 self.chunk_metadata = []
         else:
