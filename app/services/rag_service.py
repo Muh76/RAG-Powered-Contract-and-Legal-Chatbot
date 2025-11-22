@@ -656,13 +656,19 @@ class RAGService:
     def _search_with_tfidf(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
         """Fallback TF-IDF keyword search when embeddings are unavailable"""
         try:
+            # CRITICAL FIX: Use sklearn only - no PyTorch dependencies
             from sklearn.feature_extraction.text import TfidfVectorizer
             from sklearn.metrics.pairwise import cosine_similarity
             
             # Extract texts from metadata
+            if not self.chunk_metadata or len(self.chunk_metadata) == 0:
+                logger.warning("No chunk metadata available for TF-IDF search")
+                return []
+            
             texts = [chunk.get("text", "") for chunk in self.chunk_metadata]
             
-            if not texts:
+            if not texts or len(texts) == 0:
+                logger.warning("No texts available for TF-IDF search")
                 return []
             
             # Create TF-IDF vectors
