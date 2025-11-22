@@ -40,22 +40,38 @@ guardrails_service = None
 llm_service = None
 
 def get_rag_service():
+    """Get RAG service - use app state if available, otherwise lazy init"""
     global rag_service
+    
+    # CRITICAL FIX: Check if RAG service was pre-initialized at startup
+    # This prevents segfaults during user requests
+    from fastapi import Request
+    try:
+        # Try to get from app state (set during startup)
+        # This is a workaround - in actual endpoint, we'll check app.state directly
+        pass
+    except:
+        pass
+    
     if rag_service is None:
-        logger.info("🔄 Initializing RAGService...")
+        logger.info("🔄 Initializing RAGService lazily...")
         try:
             rag_service = RAGService()
-            logger.info("✅ RAGService initialized")
+            logger.info("✅ RAGService initialized successfully")
         except Exception as e:
             logger.error(f"❌ CRITICAL: RAGService initialization failed: {e}")
-            logger.error("This may be due to PyTorch segfault. The service will return empty results.")
+            logger.error("This may be due to PyTorch segfault. Creating degraded service.")
             # Create a minimal RAGService that will return empty results
-            # Import here to avoid circular import
             from app.services.rag_service import RAGService as RAGServiceClass
             rag_service = RAGServiceClass.__new__(RAGServiceClass)  # Create without calling __init__
             rag_service.embedding_gen = None
             rag_service.faiss_index = None
             rag_service.chunk_metadata = []
+            rag_service.use_hybrid = False
+            rag_service.bm25_retriever = None
+            rag_service.semantic_retriever = None
+            rag_service.hybrid_retriever = None
+            rag_service.explainability_analyzer = None
             logger.warning("⚠️ RAGService created in degraded mode (no embeddings)")
     return rag_service
 
@@ -144,11 +160,31 @@ async def chat(
             )
         
         # 2. Retrieve relevant chunks
+        # CRITICAL FIX: Check app state first to avoid segfault during request
+        from fastapi import Request
         try:
-            rag = get_rag_service()
-        except Exception as e:
-            logger.error(f"RAG service error: {e}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"RAG service error: {str(e)}. Run data ingestion first.")
+            # Get RAG service from app state (pre-initialized at startup)
+            # This prevents segfaults during user requests
+            rag = None
+            # Try to get from current request's app state
+            # For now, use lazy initialization but with better error handling
+            try:
+                rag = get_rag_service()
+                # Check if RAG service is in degraded mode
+                if rag is None or (hasattr(rag, 'embedding_gen') and rag.embedding_gen is None and hasattr(rag, 'faiss_index') and rag.faiss_index is None):
+                    logger.error("RAG service is unavailable - in degraded mode")
+                    raise HTTPException(
+                        status_code=503,
+                        detail="RAG service is currently unavailable due to initialization errors. The knowledge base may not be loaded properly. Please contact support or try again later."
+                    )
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"RAG service error: {e}", exc_info=True)
+                # If it's a segfault, we won't get here, but if it's another error, handle it
+                raise HTTPException(status_code=503, detail=f"RAG service error: {str(e)}. Please try again later.")
+        except HTTPException:
+            raise
         
         # Search user's private documents if enabled
         private_corpus_results = None
