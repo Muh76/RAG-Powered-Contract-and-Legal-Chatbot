@@ -131,26 +131,8 @@ class RAGService:
             self.bm25_retriever = BM25Retriever(documents)
             logger.info("✅ BM25 retriever initialized")
             
-            # Try to initialize embedding generator (lazy) - inline to avoid method call during init
-            embedding_gen = None
-            if hasattr(self, '_embedding_config') and self._embedding_config:
-                try:
-                    from retrieval.embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
-                    embedding_config = EmbeddingConfig(
-                        model_name=self._embedding_config["model_name"],
-                        dimension=self._embedding_config["dimension"]
-                    )
-                    logger.info("🔄 Initializing embedding generator (lazy load for hybrid)...")
-                    embedding_gen = EmbeddingGenerator(embedding_config)
-                    if embedding_gen.model is None:
-                        logger.warning("⚠️ Embedding model not available")
-                        embedding_gen = None
-                    else:
-                        logger.info("✅ Embedding generator initialized for hybrid search")
-                        self.embedding_gen = embedding_gen  # Store for later use
-                except Exception as e:
-                    logger.warning(f"⚠️ Failed to initialize embedding generator: {e}")
-                    embedding_gen = None
+            # Use embedding generator if available (should be initialized in _initialize)
+            embedding_gen = self.embedding_gen
             
             # Initialize semantic retriever if embeddings are available
             semantic_retriever = None
@@ -169,21 +151,24 @@ class RAGService:
                     logger.warning(f"Failed to initialize semantic retriever: {e}")
                     semantic_retriever = None
             
-            # Fallback to TF-IDF if semantic retriever not available
+            # Fallback to TF-IDF ONLY if embeddings truly failed
             if semantic_retriever is None:
-                logger.info("🔄 Using TF-IDF retriever as fallback (no semantic embeddings)")
+                logger.warning("⚠️⚠️⚠️ SEMANTIC EMBEDDINGS NOT AVAILABLE!")
+                logger.warning("⚠️ This means NO TRUE HYBRID SEARCH - only BM25 + TF-IDF (keyword-based)")
+                logger.warning("⚠️ Trying to initialize TF-IDF as fallback...")
                 try:
                     from retrieval.tfidf_retriever import TFIDFRetriever
                     tfidf_retriever = TFIDFRetriever(self.chunk_metadata)
                     if tfidf_retriever.is_ready():
-                        semantic_retriever = tfidf_retriever  # Use TF-IDF as semantic component
-                        logger.info("✅ TF-IDF retriever initialized (hybrid: BM25 + TF-IDF)")
+                        semantic_retriever = tfidf_retriever  # Use TF-IDF as fallback
+                        logger.warning("⚠️ Using TF-IDF fallback (BM25 + TF-IDF) - NOT TRUE HYBRID")
+                        logger.warning("⚠️ To get BM25 + EMBEDDINGS, fix embedding initialization!")
                     else:
-                        logger.warning("TF-IDF retriever not ready, hybrid search disabled")
+                        logger.error("❌ TF-IDF retriever not ready, hybrid search disabled")
                         self.hybrid_retriever = None
                         return
                 except Exception as e:
-                    logger.warning(f"Failed to initialize TF-IDF retriever: {e}")
+                    logger.error(f"❌ Failed to initialize TF-IDF retriever: {e}")
                     self.hybrid_retriever = None
                     return
             
@@ -204,9 +189,9 @@ class RAGService:
             )
             
             if self.embedding_gen and self.embedding_gen.model:
-                logger.info("✅ Hybrid retriever initialized: BM25 + Semantic embeddings")
+                logger.info("✅✅✅ TRUE HYBRID SEARCH: BM25 + Semantic Embeddings (PROPER HYBRID!)")
             else:
-                logger.info("✅ Hybrid retriever initialized: BM25 + TF-IDF (fallback)")
+                logger.warning("⚠️⚠️⚠️ DEGRADED: BM25 + TF-IDF only (keyword search, NOT true hybrid)")
             
         except Exception as e:
             logger.error(f"Error initializing hybrid retriever: {e}", exc_info=True)
