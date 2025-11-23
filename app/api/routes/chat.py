@@ -266,15 +266,20 @@ async def chat(
             # Run retrieval in executor to avoid blocking event loop and segfaults
             loop = asyncio.get_event_loop()
             
-            # PERMANENTLY DISABLE hybrid search - PyTorch removed for stability
-            logger.info("Using TF-IDF search (PyTorch permanently disabled)")
+            # Use hybrid search if available (BM25 + TF-IDF, NO PyTorch!)
+            # Hybrid search now works with BM25 + TF-IDF instead of BM25 + Semantic
+            use_hybrid_search = rag.hybrid_retriever is not None
+            if use_hybrid_search:
+                logger.info("Using hybrid search (BM25 + TF-IDF, NO PyTorch!)")
+            else:
+                logger.info("Using TF-IDF search")
             
             def search_func():
-                # Always use TF-IDF - PyTorch completely removed
+                # Use hybrid search if available (BM25 + TF-IDF, no PyTorch)
                 return rag.search(
                     query=request.query,
                     top_k=(request.top_k or 5) * 2,  # Retrieve more initially for filtering
-                    use_hybrid=False,  # PERMANENTLY disabled - no PyTorch
+                    use_hybrid=use_hybrid_search,  # Enable hybrid if available
                     user_id=current_user.id if include_private_corpus else None,
                     include_private_corpus=include_private_corpus and private_corpus_results is not None,
                     private_corpus_results=private_corpus_results

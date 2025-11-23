@@ -100,11 +100,10 @@ class RAGService:
                 logger.warning("Cannot initialize hybrid retriever: no chunk metadata available")
                 return
             
-            # CRITICAL FIX: Only import PyTorch-dependent modules when actually needed
-            # This prevents PyTorch from being imported at module load time
+            # CRITICAL FIX: Use TF-IDF retriever instead of semantic retriever (NO PyTorch!)
             try:
-                from retrieval.semantic_retriever import SemanticRetriever
                 from retrieval.hybrid_retriever import AdvancedHybridRetriever, FusionStrategy
+                from retrieval.tfidf_retriever import TFIDFRetriever
             except ImportError as e:
                 logger.warning(f"Could not import hybrid retriever components: {e}")
                 self.hybrid_retriever = None
@@ -113,59 +112,40 @@ class RAGService:
             # Extract documents for BM25
             documents = [chunk.get("text", "") for chunk in self.chunk_metadata]
             
-            # Initialize BM25 retriever
+            # Initialize BM25 retriever (no PyTorch)
             self.bm25_retriever = BM25Retriever(documents)
             logger.info("✅ BM25 retriever initialized")
             
-            # Initialize semantic retriever (only if embeddings available)
-            if self.embedding_gen is None or (hasattr(self.embedding_gen, 'model') and self.embedding_gen.model is None):
-                logger.warning("Cannot initialize semantic retriever: no embeddings available")
-                self.hybrid_retriever = None
-                return
-            
+            # Initialize TF-IDF retriever (replaces semantic retriever - no PyTorch!)
             try:
-                self.semantic_retriever = SemanticRetriever()
-                if not self.semantic_retriever.is_ready():
-                    logger.warning("Semantic retriever not ready, hybrid search will have limited functionality")
+                self.tfidf_retriever = TFIDFRetriever(self.chunk_metadata)
+                if not self.tfidf_retriever.is_ready():
+                    logger.warning("TF-IDF retriever not ready, hybrid search will have limited functionality")
                     self.hybrid_retriever = None
                     return
+                logger.info("✅ TF-IDF retriever initialized (replacing semantic retriever)")
             except Exception as e:
-                logger.warning(f"Failed to initialize semantic retriever: {e}")
+                logger.warning(f"Failed to initialize TF-IDF retriever: {e}")
                 self.hybrid_retriever = None
                 return
             
-            # Initialize reranker if enabled (lazy import to prevent PyTorch crash)
+            # Disable reranker (requires PyTorch)
             reranker = None
-            if settings.ENABLE_RERANKING:
-                try:
-                    # Lazy import - only when reranking is actually enabled
-                    from retrieval.rerankers.cross_encoder_reranker import CrossEncoderReranker
-                    reranker = CrossEncoderReranker(
-                        model_name=settings.RERANKER_MODEL,
-                        batch_size=settings.RERANKER_BATCH_SIZE
-                    )
-                    if reranker.is_ready():
-                        logger.info("✅ Cross-encoder reranker initialized")
-                    else:
-                        logger.warning("⚠️ Cross-encoder reranker not available")
-                        reranker = None
-                except Exception as e:
-                    logger.warning(f"Failed to initialize reranker: {e}")
-                    reranker = None
             
-            # Create hybrid retriever
+            # Create hybrid retriever with BM25 + TF-IDF (no PyTorch!)
+            # TF-IDF retriever implements same interface as semantic retriever
             self.hybrid_retriever = AdvancedHybridRetriever(
                 bm25_retriever=self.bm25_retriever,
-                semantic_retriever=self.semantic_retriever,
+                semantic_retriever=self.tfidf_retriever,  # Use TF-IDF instead of semantic!
                 chunk_metadata=self.chunk_metadata,
                 fusion_strategy=settings.HYBRID_SEARCH_FUSION_STRATEGY,
                 bm25_weight=settings.HYBRID_SEARCH_BM25_WEIGHT,
                 semantic_weight=settings.HYBRID_SEARCH_SEMANTIC_WEIGHT,
                 rrf_k=settings.HYBRID_SEARCH_RRF_K,
                 reranker=reranker,
-                enable_reranking=settings.ENABLE_RERANKING and reranker is not None
+                enable_reranking=False  # Disable reranking (requires PyTorch)
             )
-            logger.info("✅ Hybrid retriever initialized")
+            logger.info("✅ Hybrid retriever initialized with BM25 + TF-IDF (NO PyTorch!)")
             
         except Exception as e:
             logger.error(f"Error initializing hybrid retriever: {e}", exc_info=True)
