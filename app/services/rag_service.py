@@ -131,14 +131,19 @@ class RAGService:
             self.bm25_retriever = BM25Retriever(documents)
             logger.info("✅ BM25 retriever initialized")
             
+            # Try to get or initialize embedding generator (lazy)
+            embedding_gen = self._get_or_init_embedding_gen()
+            
             # Initialize semantic retriever if embeddings are available
             semantic_retriever = None
-            if self.embedding_gen is not None and self.embedding_gen.model is not None:
+            if embedding_gen is not None and embedding_gen.model is not None:
                 try:
                     from retrieval.semantic_retriever import SemanticRetriever
                     semantic_retriever = SemanticRetriever()
                     if semantic_retriever.is_ready():
                         logger.info("✅ Semantic retriever initialized (hybrid: BM25 + Semantic embeddings)")
+                        # Store embedding_gen reference for later use
+                        self.embedding_gen = embedding_gen
                     else:
                         logger.warning("Semantic retriever not ready")
                         semantic_retriever = None
@@ -515,16 +520,67 @@ class RAGService:
         
         return results
     
-    def _semantic_search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
-        """Original semantic search method (backward compatible) - NOW USING TF-IDF ONLY"""
-        # PERMANENT FIX: Always use TF-IDF to avoid PyTorch segfaults
-        # PyTorch/SentenceTransformer has been removed to prevent crashes
-        logger.info("Using TF-IDF keyword search (PyTorch embeddings disabled for stability)")
+    def _search_with_embeddings(self, query: str, top_k: int, embedding_gen) -> List[Dict[str, Any]]:
+        """Search using embeddings and FAISS index"""
         try:
-            return self._search_with_tfidf(query, top_k)
-        except Exception as tfidf_error:
-            logger.error(f"TF-IDF search failed: {tfidf_error}", exc_info=True)
+            if not self.faiss_index or not embedding_gen or not embedding_gen.model:
+                return []
+            
+            # Generate query embedding
+            query_embedding_list = embedding_gen.generate_embedding(query)
+            if not query_embedding_list:
+                return []
+            
+            query_embedding = np.array(query_embedding_list, dtype=np.float32)
+            
+            # Normalize embedding
+            norm = np.linalg.norm(query_embedding)
+            if norm == 0 or np.isnan(norm) or np.isinf(norm):
+                return []
+            query_normalized = query_embedding / norm
+            query_normalized = np.ascontiguousarray(query_normalized, dtype=np.float32)
+            
+            # Search FAISS index
+            k = min(top_k, self.faiss_index.ntotal)
+            similarities, indices = self.faiss_index.search(query_normalized.reshape(1, -1), k)
+            
+            # Format results
+            results = []
+            for idx, similarity in zip(indices[0], similarities[0]):
+                if idx == -1 or idx >= len(self.chunk_metadata):
+                    continue
+                
+                chunk_data = self.chunk_metadata[idx]
+                results.append({
+                    "chunk_id": chunk_data.get("chunk_id", f"chunk_{idx}"),
+                    "text": chunk_data.get("text", ""),
+                    "metadata": chunk_data.get("metadata", {}),
+                    "similarity_score": float(similarity),
+                    "section": chunk_data.get("metadata", {}).get("section", "Unknown")
+                })
+            
+            return results[:top_k]
+        except Exception as e:
+            logger.error(f"Embedding search failed: {e}", exc_info=True)
             return []
+    
+    def _semantic_search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
+        """Semantic search using embeddings (with TF-IDF fallback)"""
+        # Try to use embeddings if available
+        embedding_gen = self._get_or_init_embedding_gen()
+        
+        if embedding_gen and embedding_gen.model is not None and self.faiss_index is not None:
+            # Use semantic embeddings (FAISS)
+            logger.info("Using semantic embeddings search")
+            try:
+                return self._search_with_embeddings(query, top_k, embedding_gen)
+            except Exception as e:
+                logger.warning(f"Semantic search failed: {e}, falling back to TF-IDF")
+                return self._search_with_tfidf(query, top_k)
+        else:
+            # Fallback to TF-IDF
+            logger.info("Using TF-IDF keyword search (no embeddings available)")
+            return self._search_with_tfidf(query, top_k)
         
         # REMOVED: All PyTorch embedding code to prevent segfaults
         # This code path is no longer used - we always use TF-IDF
