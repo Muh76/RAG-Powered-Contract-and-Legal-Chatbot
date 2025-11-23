@@ -82,50 +82,52 @@ class RAGService:
                 self.embedding_gen = None
             else:
                 # CRITICAL: Initialize embeddings IMMEDIATELY for TRUE hybrid search (BM25 + Embeddings)
-                # Isolate in ThreadPoolExecutor to prevent segfaults from crashing the server
+                # Use proper initialization with robust error handling
                 logger.info("🚀 Initializing embedding generator NOW for BM25 + Embeddings hybrid search...")
                 try:
-                    from concurrent.futures import ThreadPoolExecutor
-                    import threading
+                    from retrieval.embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
                     
-                    embedding_result = {"success": False, "embedding_gen": None, "error": None}
+                    # Check PyTorch availability first (prevents segfaults)
+                    from retrieval.embeddings.embedding_generator import _check_pytorch_available
                     
-                    def init_embedding():
-                        try:
-                            from retrieval.embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
-                            embedding_config = EmbeddingConfig(
-                                model_name=settings.EMBEDDING_MODEL,
-                                dimension=settings.EMBEDDING_DIMENSION
-                            )
-                            gen = EmbeddingGenerator(embedding_config)
-                            if gen.model is not None:
-                                embedding_result["success"] = True
-                                embedding_result["embedding_gen"] = gen
-                            else:
-                                embedding_result["error"] = "Model is None"
-                        except Exception as e:
-                            embedding_result["error"] = str(e)
-                    
-                    # Initialize in separate thread with timeout to prevent segfaults
-                    with ThreadPoolExecutor(max_workers=1) as executor:
-                        future = executor.submit(init_embedding)
-                        try:
-                            future.result(timeout=30)
-                            if embedding_result["success"]:
-                                self.embedding_gen = embedding_result["embedding_gen"]
-                                logger.info("✅✅✅ Embedding generator initialized!")
-                                logger.info("✅✅✅ TRUE HYBRID: BM25 + SEMANTIC EMBEDDINGS enabled!")
-                            else:
-                                logger.error(f"❌ Embedding init failed: {embedding_result.get('error')}")
-                                logger.warning("⚠️ Falling back to TF-IDF (not true hybrid)")
+                    if not _check_pytorch_available():
+                        logger.error("❌ PyTorch is not available or broken")
+                        logger.warning("⚠️ Run: python scripts/fix_pytorch_installation.py to fix")
+                        logger.warning("⚠️ Falling back to TF-IDF (not true hybrid)")
+                        self.embedding_gen = None
+                    else:
+                        logger.info("✅ PyTorch check passed, initializing embeddings...")
+                        embedding_config = EmbeddingConfig(
+                            model_name=settings.EMBEDDING_MODEL,
+                            dimension=settings.EMBEDDING_DIMENSION
+                        )
+                        
+                        # Initialize directly - PyTorch check already passed
+                        self.embedding_gen = EmbeddingGenerator(embedding_config)
+                        
+                        if self.embedding_gen.model is not None:
+                            logger.info("✅✅✅ Embedding generator initialized successfully!")
+                            logger.info("✅✅✅ TRUE HYBRID: BM25 + SEMANTIC EMBEDDINGS enabled!")
+                            
+                            # Test that it actually works
+                            try:
+                                test_emb = self.embedding_gen.generate_embedding("test")
+                                if test_emb and len(test_emb) > 0:
+                                    logger.info(f"✅ Embedding generation verified: {len(test_emb)} dimensions")
+                                else:
+                                    raise RuntimeError("Embedding generation returned empty result")
+                            except Exception as test_error:
+                                logger.error(f"❌ Embedding generation test failed: {test_error}")
+                                logger.warning("⚠️ Embeddings may not work properly")
                                 self.embedding_gen = None
-                        except Exception as timeout_error:
-                            logger.error(f"❌ Embedding init timed out: {timeout_error}")
+                        else:
+                            logger.error("❌ Embedding model is None after initialization")
                             logger.warning("⚠️ Falling back to TF-IDF (not true hybrid)")
                             self.embedding_gen = None
-                            future.cancel()
+                            
                 except Exception as embed_error:
                     logger.error(f"❌ Failed to initialize embeddings: {embed_error}", exc_info=True)
+                    logger.warning("⚠️ Run: python scripts/fix_pytorch_installation.py to fix PyTorch")
                     logger.warning("⚠️ Falling back to TF-IDF (not true hybrid)")
                     self.embedding_gen = None
         except Exception as e:
