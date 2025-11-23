@@ -70,12 +70,29 @@ class RAGService:
             self.chunk_metadata = []
             # Continue anyway - can use TF-IDF fallback
         
-        # Step 2: PERMANENTLY DISABLE embedding generator to prevent PyTorch segfaults
-        # PyTorch/SentenceTransformer has been removed - system now uses TF-IDF only
-        # This ensures the system works seamlessly without crashes
-        logger.info("⚠️ Embeddings PERMANENTLY DISABLED to prevent PyTorch segfaults")
-        logger.info("✅ System will use TF-IDF keyword search only (stable and fast)")
-        self.embedding_gen = None
+        # Step 2: Initialize embedding generator (for semantic search in hybrid mode)
+        # Try to initialize embeddings - if it fails, fall back to TF-IDF only
+        # Use lazy initialization to prevent segfaults at startup
+        try:
+            # Check if embeddings are explicitly disabled
+            disable_embeddings = os.getenv("DISABLE_EMBEDDINGS", "").lower() in ("1", "true", "yes")
+            if disable_embeddings:
+                logger.info("⚠️ Embeddings disabled via DISABLE_EMBEDDINGS environment variable")
+                logger.info("✅ System will use TF-IDF keyword search only")
+                self.embedding_gen = None
+            else:
+                # Lazy initialization: Don't initialize now, wait until first use
+                # This prevents segfaults at startup
+                logger.info("🔄 Embedding generator will be initialized on first use (lazy loading)")
+                self.embedding_gen = None
+                self._embedding_config = {
+                    "model_name": settings.EMBEDDING_MODEL,
+                    "dimension": settings.EMBEDDING_DIMENSION
+                }
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to prepare embedding generator: {e}")
+            logger.info("✅ System will use TF-IDF keyword search (stable fallback)")
+            self.embedding_gen = None
         
         # Step 3: Initialize hybrid retriever with BM25 + TF-IDF (NO PyTorch!)
         if self.use_hybrid and self.chunk_metadata:
@@ -94,16 +111,14 @@ class RAGService:
             logger.info("✅ RAG service fully initialized")
     
     def _initialize_hybrid_retriever(self):
-        """Initialize hybrid retriever components - with lazy imports to prevent PyTorch segfaults"""
+        """Initialize hybrid retriever with BM25 + Semantic embeddings (or TF-IDF fallback)"""
         try:
             if not self.chunk_metadata or len(self.chunk_metadata) == 0:
                 logger.warning("Cannot initialize hybrid retriever: no chunk metadata available")
                 return
             
-            # CRITICAL FIX: Use TF-IDF retriever instead of semantic retriever (NO PyTorch!)
             try:
                 from retrieval.hybrid_retriever import AdvancedHybridRetriever, FusionStrategy
-                from retrieval.tfidf_retriever import TFIDFRetriever
             except ImportError as e:
                 logger.warning(f"Could not import hybrid retriever components: {e}")
                 self.hybrid_retriever = None
@@ -112,40 +127,63 @@ class RAGService:
             # Extract documents for BM25
             documents = [chunk.get("text", "") for chunk in self.chunk_metadata]
             
-            # Initialize BM25 retriever (no PyTorch)
+            # Initialize BM25 retriever (always available - no PyTorch)
             self.bm25_retriever = BM25Retriever(documents)
             logger.info("✅ BM25 retriever initialized")
             
-            # Initialize TF-IDF retriever (replaces semantic retriever - no PyTorch!)
-            try:
-                self.tfidf_retriever = TFIDFRetriever(self.chunk_metadata)
-                if not self.tfidf_retriever.is_ready():
-                    logger.warning("TF-IDF retriever not ready, hybrid search will have limited functionality")
+            # Initialize semantic retriever if embeddings are available
+            semantic_retriever = None
+            if self.embedding_gen is not None and self.embedding_gen.model is not None:
+                try:
+                    from retrieval.semantic_retriever import SemanticRetriever
+                    semantic_retriever = SemanticRetriever()
+                    if semantic_retriever.is_ready():
+                        logger.info("✅ Semantic retriever initialized (hybrid: BM25 + Semantic embeddings)")
+                    else:
+                        logger.warning("Semantic retriever not ready")
+                        semantic_retriever = None
+                except Exception as e:
+                    logger.warning(f"Failed to initialize semantic retriever: {e}")
+                    semantic_retriever = None
+            
+            # Fallback to TF-IDF if semantic retriever not available
+            if semantic_retriever is None:
+                logger.info("🔄 Using TF-IDF retriever as fallback (no semantic embeddings)")
+                try:
+                    from retrieval.tfidf_retriever import TFIDFRetriever
+                    tfidf_retriever = TFIDFRetriever(self.chunk_metadata)
+                    if tfidf_retriever.is_ready():
+                        semantic_retriever = tfidf_retriever  # Use TF-IDF as semantic component
+                        logger.info("✅ TF-IDF retriever initialized (hybrid: BM25 + TF-IDF)")
+                    else:
+                        logger.warning("TF-IDF retriever not ready, hybrid search disabled")
+                        self.hybrid_retriever = None
+                        return
+                except Exception as e:
+                    logger.warning(f"Failed to initialize TF-IDF retriever: {e}")
                     self.hybrid_retriever = None
                     return
-                logger.info("✅ TF-IDF retriever initialized (replacing semantic retriever)")
-            except Exception as e:
-                logger.warning(f"Failed to initialize TF-IDF retriever: {e}")
-                self.hybrid_retriever = None
-                return
             
-            # Disable reranker (requires PyTorch)
+            # Disable reranker (optional - requires PyTorch)
             reranker = None
             
-            # Create hybrid retriever with BM25 + TF-IDF (no PyTorch!)
-            # TF-IDF retriever implements same interface as semantic retriever
+            # Create hybrid retriever with BM25 + Semantic (or TF-IDF fallback)
             self.hybrid_retriever = AdvancedHybridRetriever(
                 bm25_retriever=self.bm25_retriever,
-                semantic_retriever=self.tfidf_retriever,  # Use TF-IDF instead of semantic!
+                semantic_retriever=semantic_retriever,  # Semantic embeddings OR TF-IDF
                 chunk_metadata=self.chunk_metadata,
                 fusion_strategy=settings.HYBRID_SEARCH_FUSION_STRATEGY,
                 bm25_weight=settings.HYBRID_SEARCH_BM25_WEIGHT,
                 semantic_weight=settings.HYBRID_SEARCH_SEMANTIC_WEIGHT,
                 rrf_k=settings.HYBRID_SEARCH_RRF_K,
                 reranker=reranker,
-                enable_reranking=False  # Disable reranking (requires PyTorch)
+                enable_reranking=False  # Disable reranking (optional PyTorch feature)
             )
-            logger.info("✅ Hybrid retriever initialized with BM25 + TF-IDF (NO PyTorch!)")
+            
+            if self.embedding_gen and self.embedding_gen.model:
+                logger.info("✅ Hybrid retriever initialized: BM25 + Semantic embeddings")
+            else:
+                logger.info("✅ Hybrid retriever initialized: BM25 + TF-IDF (fallback)")
             
         except Exception as e:
             logger.error(f"Error initializing hybrid retriever: {e}", exc_info=True)
