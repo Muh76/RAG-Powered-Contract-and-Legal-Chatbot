@@ -266,31 +266,15 @@ async def chat(
             # Run retrieval in executor to avoid blocking event loop and segfaults
             loop = asyncio.get_event_loop()
             
-            # Prepare search function with private corpus if available
-            # CRITICAL FIX: ALWAYS set use_hybrid=False when embeddings are unavailable
-            # This prevents any PyTorch imports during search
-            use_hybrid_search = False
-            if rag.embedding_gen is not None and hasattr(rag.embedding_gen, 'model') and rag.embedding_gen.model is not None:
-                # Only enable hybrid search if embeddings are actually working
-                if rag.hybrid_retriever is not None:
-                    use_hybrid_search = True
-                    logger.info("Using hybrid search (embeddings and hybrid retriever available)")
-                else:
-                    logger.info("Using semantic search (embeddings available but no hybrid retriever)")
-            else:
-                logger.info("Using TF-IDF search (embeddings not available)")
-            
-            # CRITICAL: Ensure use_hybrid is explicitly False if embeddings unavailable
-            if use_hybrid_search and (rag.embedding_gen is None or (hasattr(rag.embedding_gen, 'model') and rag.embedding_gen.model is None)):
-                logger.warning("⚠️ Hybrid search requested but embeddings unavailable - forcing False")
-                use_hybrid_search = False
+            # PERMANENTLY DISABLE hybrid search - PyTorch removed for stability
+            logger.info("Using TF-IDF search (PyTorch permanently disabled)")
             
             def search_func():
-                # CRITICAL: Pass use_hybrid=False to ensure no PyTorch imports
+                # Always use TF-IDF - PyTorch completely removed
                 return rag.search(
                     query=request.query,
                     top_k=(request.top_k or 5) * 2,  # Retrieve more initially for filtering
-                    use_hybrid=use_hybrid_search,  # Explicitly False when embeddings unavailable
+                    use_hybrid=False,  # PERMANENTLY disabled - no PyTorch
                     user_id=current_user.id if include_private_corpus else None,
                     include_private_corpus=include_private_corpus and private_corpus_results is not None,
                     private_corpus_results=private_corpus_results

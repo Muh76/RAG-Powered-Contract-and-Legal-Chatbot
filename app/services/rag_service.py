@@ -286,17 +286,10 @@ class RAGService:
         
         logger.info(f"📊 Service state: FAISS index has {self.faiss_index.ntotal} vectors, {len(self.chunk_metadata)} chunks")
         
-        # Determine if we should use hybrid search
-        use_hybrid_search = use_hybrid if use_hybrid is not None else self.use_hybrid
-        
-        # Get public corpus results
-        if use_hybrid_search and self.hybrid_retriever:
-            logger.info("🔀 Using hybrid search")
-            public_results = self._hybrid_search(query, top_k, fusion_strategy, metadata_filter)
-        else:
-            # Fall back to original semantic search (backward compatible)
-            logger.info("🔎 Using semantic search")
-            public_results = self._semantic_search(query, top_k)
+        # PERMANENTLY DISABLE hybrid search - PyTorch removed
+        # Always use TF-IDF search for stability
+        logger.info("🔎 Using TF-IDF search (PyTorch permanently disabled)")
+        public_results = self._semantic_search(query, top_k)
         
         logger.info(f"📋 Public corpus returned {len(public_results)} results")
         
