@@ -76,7 +76,7 @@ class EmbeddingGenerator:
             error_msg = (
                 "PyTorch is broken (missing libtorch_cpu.dylib). "
                 "This will cause segfaults. "
-                "Fix with: pip uninstall torch && pip install torch"
+                "Fix with: python scripts/fix_pytorch_installation.py"
             )
             logger.error(error_msg)
             self.model = None
@@ -108,7 +108,7 @@ class EmbeddingGenerator:
             error_msg = str(e).lower()
             if "libtorch" in error_msg or "dlopen" in error_msg:
                 logger.error(f"❌ CRITICAL: PyTorch library loading failed: {e}")
-                logger.error("This will cause segfaults. Fix with: pip uninstall torch && pip install torch")
+                logger.error("This will cause segfaults. Fix with: python scripts/fix_pytorch_installation.py")
             else:
                 logger.error(f"Failed to load embedding model: {e}")
             self.model = None
