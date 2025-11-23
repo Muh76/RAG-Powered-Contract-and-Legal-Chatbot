@@ -77,11 +77,13 @@ class RAGService:
         logger.info("✅ System will use TF-IDF keyword search only (stable and fast)")
         self.embedding_gen = None
         
-        # Step 3: PERMANENTLY DISABLE hybrid retriever to prevent PyTorch imports
-        # Hybrid retriever requires embeddings which require PyTorch
-        logger.info("⚠️ Hybrid retriever PERMANENTLY DISABLED to prevent PyTorch imports")
-        self.hybrid_retriever = None
-        self.use_hybrid = False  # Force disable hybrid search
+        # Step 3: Initialize hybrid retriever with BM25 + TF-IDF (NO PyTorch!)
+        if self.use_hybrid and self.chunk_metadata:
+            try:
+                self._initialize_hybrid_retriever()
+            except Exception as e:
+                logger.warning(f"Failed to initialize hybrid retriever: {e}")
+                self.hybrid_retriever = None
         
         # Final status check
         if self.embedding_gen is None and self.faiss_index is None:
@@ -286,10 +288,16 @@ class RAGService:
         
         logger.info(f"📊 Service state: FAISS index has {self.faiss_index.ntotal} vectors, {len(self.chunk_metadata)} chunks")
         
-        # PERMANENTLY DISABLE hybrid search - PyTorch removed
-        # Always use TF-IDF search for stability
-        logger.info("🔎 Using TF-IDF search (PyTorch permanently disabled)")
-        public_results = self._semantic_search(query, top_k)
+        # Use hybrid search if available (BM25 + TF-IDF, NO PyTorch!)
+        # Otherwise fall back to TF-IDF search
+        use_hybrid_search = use_hybrid if use_hybrid is not None else self.use_hybrid
+        
+        if use_hybrid_search and self.hybrid_retriever:
+            logger.info("🔀 Using hybrid search (BM25 + TF-IDF, NO PyTorch!)")
+            public_results = self._hybrid_search(query, top_k, fusion_strategy, metadata_filter)
+        else:
+            logger.info("🔎 Using TF-IDF search")
+            public_results = self._semantic_search(query, top_k)
         
         logger.info(f"📋 Public corpus returned {len(public_results)} results")
         
