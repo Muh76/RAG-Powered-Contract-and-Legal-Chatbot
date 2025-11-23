@@ -1,7 +1,7 @@
 # Legal Chatbot - Statute Lookup Tool for LangChain Agent
 # Allows agent to look up specific UK statutes by name
 
-from typing import Optional
+from typing import Optional, Any
 try:
     from langchain_core.tools import BaseTool
 except ImportError:
