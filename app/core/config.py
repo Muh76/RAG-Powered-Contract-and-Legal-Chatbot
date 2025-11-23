@@ -25,11 +25,13 @@ class Settings(BaseSettings):
     # OpenAI Configuration
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_MODEL: str = "gpt-4-turbo-preview"
-    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-large"
+    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"  # Default: fast and cheap
     
     # Embedding Configuration
-    EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
-    EMBEDDING_DIMENSION: int = 384
+    # Primary: Use OpenAI embeddings (no PyTorch required - eliminates segfaults!)
+    USE_OPENAI_EMBEDDINGS: bool = True  # Set to False to use sentence-transformers (PyTorch)
+    EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"  # Fallback if OpenAI not available
+    EMBEDDING_DIMENSION: int = 1536  # text-embedding-3-small default, or 384 for all-MiniLM-L6-v2
     EMBEDDING_BATCH_SIZE: int = 32
     
     # Retrieval Configuration

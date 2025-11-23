@@ -82,52 +82,83 @@ class RAGService:
                 self.embedding_gen = None
             else:
                 # CRITICAL: Initialize embeddings IMMEDIATELY for TRUE hybrid search (BM25 + Embeddings)
-                # Use proper initialization with robust error handling
-                logger.info("🚀 Initializing embedding generator NOW for BM25 + Embeddings hybrid search...")
+                # Use OpenAI embeddings (NO PyTorch - eliminates segfaults completely!)
+                logger.info("🚀 Initializing OpenAI embedding generator for BM25 + Embeddings hybrid search...")
+                logger.info("✅ Using OpenAI API - NO PyTorch required (eliminates segfaults!)")
+                
                 try:
-                    from retrieval.embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
+                    from retrieval.embeddings.openai_embedding_generator import OpenAIEmbeddingGenerator, OpenAIEmbeddingConfig
                     
-                    # Check PyTorch availability first (prevents segfaults)
-                    from retrieval.embeddings.embedding_generator import _check_pytorch_available
-                    
-                    if not _check_pytorch_available():
-                        logger.error("❌ PyTorch is not available or broken")
-                        logger.warning("⚠️ Run: python scripts/fix_pytorch_installation.py to fix")
+                    # Check if OpenAI API key is available
+                    api_key = settings.OPENAI_API_KEY
+                    if not api_key:
+                        logger.error("❌ OPENAI_API_KEY not configured")
+                        logger.warning("⚠️ Set OPENAI_API_KEY environment variable or in config")
                         logger.warning("⚠️ Falling back to TF-IDF (not true hybrid)")
                         self.embedding_gen = None
                     else:
-                        logger.info("✅ PyTorch check passed, initializing embeddings...")
-                        embedding_config = EmbeddingConfig(
-                            model_name=settings.EMBEDDING_MODEL,
-                            dimension=settings.EMBEDDING_DIMENSION
+                        logger.info("✅ OpenAI API key found, initializing OpenAI embeddings...")
+                        
+                        # Initialize OpenAI embedding generator
+                        embedding_config = OpenAIEmbeddingConfig(
+                            api_key=api_key,
+                            model=settings.OPENAI_EMBEDDING_MODEL if hasattr(settings, 'OPENAI_EMBEDDING_MODEL') else "text-embedding-3-small",
+                            dimension=settings.EMBEDDING_DIMENSION if settings.EMBEDDING_DIMENSION else None
                         )
                         
-                        # Initialize directly - PyTorch check already passed
-                        self.embedding_gen = EmbeddingGenerator(embedding_config)
+                        self.embedding_gen = OpenAIEmbeddingGenerator(embedding_config)
                         
-                        if self.embedding_gen.model is not None:
-                            logger.info("✅✅✅ Embedding generator initialized successfully!")
-                            logger.info("✅✅✅ TRUE HYBRID: BM25 + SEMANTIC EMBEDDINGS enabled!")
-                            
-                            # Test that it actually works
-                            try:
-                                test_emb = self.embedding_gen.generate_embedding("test")
-                                if test_emb and len(test_emb) > 0:
-                                    logger.info(f"✅ Embedding generation verified: {len(test_emb)} dimensions")
-                                else:
-                                    raise RuntimeError("Embedding generation returned empty result")
-                            except Exception as test_error:
-                                logger.error(f"❌ Embedding generation test failed: {test_error}")
-                                logger.warning("⚠️ Embeddings may not work properly")
-                                self.embedding_gen = None
-                        else:
-                            logger.error("❌ Embedding model is None after initialization")
+                        # Test that it actually works
+                        try:
+                            test_emb = self.embedding_gen.generate_embedding("test")
+                            if test_emb and len(test_emb) > 0:
+                                logger.info(f"✅✅✅ OpenAI embedding generator initialized!")
+                                logger.info(f"✅ Embedding generation verified: {len(test_emb)} dimensions")
+                                logger.info("✅✅✅ TRUE HYBRID: BM25 + SEMANTIC EMBEDDINGS enabled!")
+                                logger.info("✅✅✅ NO PYTORCH - NO SEGFAULTS!")
+                            else:
+                                raise RuntimeError("Embedding generation returned empty result")
+                        except Exception as test_error:
+                            logger.error(f"❌ OpenAI embedding generation test failed: {test_error}")
+                            logger.warning("⚠️ Check OPENAI_API_KEY and API access")
                             logger.warning("⚠️ Falling back to TF-IDF (not true hybrid)")
                             self.embedding_gen = None
                             
+                except ImportError:
+                    # Fallback to PyTorch if OpenAI generator not available
+                    logger.warning("⚠️ OpenAI embedding generator not available, trying PyTorch...")
+                    try:
+                        from retrieval.embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
+                        from retrieval.embeddings.embedding_generator import _check_pytorch_available
+                        
+                        if not _check_pytorch_available():
+                            logger.error("❌ PyTorch is not available")
+                            logger.warning("⚠️ Falling back to TF-IDF (not true hybrid)")
+                            self.embedding_gen = None
+                        else:
+                            logger.info("✅ PyTorch check passed, initializing embeddings...")
+                            embedding_config = EmbeddingConfig(
+                                model_name=settings.EMBEDDING_MODEL,
+                                dimension=settings.EMBEDDING_DIMENSION
+                            )
+                            self.embedding_gen = EmbeddingGenerator(embedding_config)
+                            
+                            if self.embedding_gen.model is not None:
+                                logger.info("✅✅✅ Embedding generator initialized (PyTorch fallback)")
+                                test_emb = self.embedding_gen.generate_embedding("test")
+                                if test_emb and len(test_emb) > 0:
+                                    logger.info(f"✅ Embedding verified: {len(test_emb)} dimensions")
+                            else:
+                                logger.error("❌ Embedding model is None")
+                                self.embedding_gen = None
+                    except Exception as pytorch_error:
+                        logger.error(f"❌ PyTorch initialization failed: {pytorch_error}")
+                        logger.warning("⚠️ Falling back to TF-IDF (not true hybrid)")
+                        self.embedding_gen = None
+                        
                 except Exception as embed_error:
-                    logger.error(f"❌ Failed to initialize embeddings: {embed_error}", exc_info=True)
-                    logger.warning("⚠️ Run: python scripts/fix_pytorch_installation.py to fix PyTorch")
+                    logger.error(f"❌ Failed to initialize OpenAI embeddings: {embed_error}", exc_info=True)
+                    logger.warning("⚠️ Check OPENAI_API_KEY configuration")
                     logger.warning("⚠️ Falling back to TF-IDF (not true hybrid)")
                     self.embedding_gen = None
         except Exception as e:
