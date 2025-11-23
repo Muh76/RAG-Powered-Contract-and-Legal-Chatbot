@@ -14,14 +14,15 @@ import logging
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from retrieval.embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
-from retrieval.bm25_retriever import BM25Retriever
-# CRITICAL FIX: Make PyTorch-dependent imports lazy to prevent segfaults
-# Don't import these at module level - import only when needed
+# PERMANENTLY REMOVED: PyTorch-dependent imports to prevent segfaults
+# from retrieval.embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
 # from retrieval.semantic_retriever import SemanticRetriever
 # from retrieval.hybrid_retriever import AdvancedHybridRetriever, FusionStrategy
 # from retrieval.rerankers.cross_encoder_reranker import CrossEncoderReranker
 # from retrieval.explainability import ExplainabilityAnalyzer
+
+# System now uses TF-IDF only (no PyTorch dependencies)
+from retrieval.bm25_retriever import BM25Retriever
 from retrieval.metadata_filter import MetadataFilter
 from app.core.config import settings
 
@@ -69,51 +70,18 @@ class RAGService:
             self.chunk_metadata = []
             # Continue anyway - can use TF-IDF fallback
         
-        # Step 2: Initialize embedding generator (may cause segfault)
-        embedding_config = EmbeddingConfig(
-            model_name=settings.EMBEDDING_MODEL,
-            dimension=settings.EMBEDDING_DIMENSION,
-            batch_size=settings.EMBEDDING_BATCH_SIZE,
-            max_length=512
-        )
+        # Step 2: PERMANENTLY DISABLE embedding generator to prevent PyTorch segfaults
+        # PyTorch/SentenceTransformer has been removed - system now uses TF-IDF only
+        # This ensures the system works seamlessly without crashes
+        logger.info("⚠️ Embeddings PERMANENTLY DISABLED to prevent PyTorch segfaults")
+        logger.info("✅ System will use TF-IDF keyword search only (stable and fast)")
+        self.embedding_gen = None
         
-        # CRITICAL FIX: Use environment variable to disable embeddings if they cause segfaults
-        # Set DISABLE_EMBEDDINGS=1 to skip embedding initialization completely
-        # NEVER create EmbeddingGenerator if DISABLE_EMBEDDINGS=1 to prevent ANY PyTorch import
-        if os.getenv("DISABLE_EMBEDDINGS", "").lower() in ("1", "true", "yes"):
-            logger.warning("⚠️ Embeddings disabled via DISABLE_EMBEDDINGS environment variable")
-            logger.warning("Will use TF-IDF fallback only")
-            logger.warning("⚠️ NOT creating EmbeddingGenerator to prevent PyTorch imports")
-            self.embedding_gen = None
-        else:
-                try:
-                    logger.info("Initializing embedding generator...")
-                    # CRITICAL: Only create EmbeddingGenerator if not disabled
-                    # Creating it might import PyTorch even if model fails to load
-                    self.embedding_gen = EmbeddingGenerator(embedding_config)
-                    if self.embedding_gen.model is not None:
-                        logger.info("✅ Embedding generator initialized successfully")
-                    else:
-                        logger.warning("⚠️ Embedding model is None - falling back to TF-IDF")
-                        self.embedding_gen = None
-                except SystemExit:
-                    logger.error("❌ Embedding generator caused process exit (segfault)")
-                    logger.warning("Continuing without embeddings - will use TF-IDF fallback")
-                    logger.warning("💡 To permanently disable embeddings, set DISABLE_EMBEDDINGS=1")
-                    self.embedding_gen = None
-                except Exception as e:
-                    logger.warning(f"⚠️ Failed to initialize embedding generator: {e}")
-                    logger.warning("Falling back to TF-IDF search. Ensure venv is activated and PyTorch is installed.")
-                    logger.warning("💡 To permanently disable embeddings, set DISABLE_EMBEDDINGS=1")
-                    self.embedding_gen = None
-        
-        # Step 3: Initialize hybrid retriever if requested (only if we have chunks)
-        if self.use_hybrid and self.chunk_metadata:
-            try:
-                self._initialize_hybrid_retriever()
-            except Exception as e:
-                logger.warning(f"Failed to initialize hybrid retriever: {e}")
-                self.hybrid_retriever = None
+        # Step 3: PERMANENTLY DISABLE hybrid retriever to prevent PyTorch imports
+        # Hybrid retriever requires embeddings which require PyTorch
+        logger.info("⚠️ Hybrid retriever PERMANENTLY DISABLED to prevent PyTorch imports")
+        self.hybrid_retriever = None
+        self.use_hybrid = False  # Force disable hybrid search
         
         # Final status check
         if self.embedding_gen is None and self.faiss_index is None:
@@ -529,26 +497,24 @@ class RAGService:
         return results
     
     def _semantic_search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
-        """Original semantic search method (backward compatible)"""
-        # CRITICAL FIX: Check embeddings FIRST before doing anything else
-        # This prevents PyTorch from being imported if embeddings are disabled
-        if self.embedding_gen is None or (hasattr(self.embedding_gen, 'model') and self.embedding_gen.model is None):
-            logger.warning("Embedding model not available. Using TF-IDF keyword search fallback.")
-            try:
-                return self._search_with_tfidf(query, top_k)
-            except Exception as tfidf_error:
-                logger.error(f"TF-IDF fallback also failed: {tfidf_error}", exc_info=True)
-                return []
-        
-        # Check if service is properly initialized (only if we're using embeddings)
-        if self.faiss_index is None or len(self.chunk_metadata) == 0:
-            logger.error("Vector store not loaded. Cannot search. Run: python scripts/ingest_data.py")
+        """Original semantic search method (backward compatible) - NOW USING TF-IDF ONLY"""
+        # PERMANENT FIX: Always use TF-IDF to avoid PyTorch segfaults
+        # PyTorch/SentenceTransformer has been removed to prevent crashes
+        logger.info("Using TF-IDF keyword search (PyTorch embeddings disabled for stability)")
+        try:
+            return self._search_with_tfidf(query, top_k)
+        except Exception as tfidf_error:
+            logger.error(f"TF-IDF search failed: {tfidf_error}", exc_info=True)
             return []
         
+        # REMOVED: All PyTorch embedding code to prevent segfaults
+        # This code path is no longer used - we always use TF-IDF
+        # Keeping structure for backward compatibility but it won't execute
         try:
-            # Generate query embedding - WRAP IN TRY-CATCH TO PREVENT CRASH
+            # Generate query embedding - DISABLED to prevent PyTorch imports
             query_matrix = None
-            if self.embedding_gen and hasattr(self.embedding_gen, 'generate_embedding') and self.embedding_gen.model is not None:
+            # CRITICAL: Never use embeddings - always fall back to TF-IDF
+            if False and self.embedding_gen and hasattr(self.embedding_gen, 'generate_embedding') and self.embedding_gen.model is not None:
                 try:
                     # Sentence transformers - FIXED: Convert list to numpy array
                     query_embedding_list = self.embedding_gen.generate_embedding(query)
