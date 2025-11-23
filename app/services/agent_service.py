@@ -183,14 +183,30 @@ If the user's query is complex, break it down and use multiple tools to gather a
             # Initialize agent based on LangChain version
             if LANGCHAIN_VERSION == "1.0+":
                 # Use LangGraph for LangChain 1.0+
-                from langgraph.graph import END
-                
-                # Create agent using LangGraph
-                self.agent_executor = create_react_agent(
-                    llm,
-                    self.tools,
-                    state_modifier=self.system_prompt
-                )
+                try:
+                    from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+                    
+                    # Create prompt with system message
+                    prompt = ChatPromptTemplate.from_messages([
+                        ("system", self.system_prompt),
+                        MessagesPlaceholder(variable_name="chat_history", optional=True),
+                        ("human", "{input}"),
+                        MessagesPlaceholder(variable_name="agent_scratchpad")
+                    ])
+                    
+                    # Create agent using LangGraph with prompt
+                    self.agent_executor = create_react_agent(
+                        llm,
+                        self.tools,
+                        prompt=prompt
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to create LangGraph agent with prompt: {e}, falling back to simple agent")
+                    # Fallback to simple agent without custom prompt
+                    self.agent_executor = create_react_agent(
+                        llm,
+                        self.tools
+                    )
                 
                 logger.info("✅ LangGraph agent initialized (LangChain 1.0+)")
             else:
