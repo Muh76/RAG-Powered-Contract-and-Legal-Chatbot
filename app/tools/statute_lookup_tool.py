@@ -39,10 +39,12 @@ The tool will search for and return relevant sections from the specified statute
     
     args_schema: type[BaseModel] = StatuteLookupInput
     
-    def __init__(self, rag_service):
+    rag_service: Any = Field(default=None, exclude=True)  # Exclude from Pydantic validation
+    
+    def __init__(self, rag_service, **kwargs):
         """Initialize statute lookup tool with RAG service"""
-        super().__init__()
-        self.rag_service = rag_service
+        super().__init__(**kwargs)
+        object.__setattr__(self, 'rag_service', rag_service)  # Bypass Pydantic validation
     
     def _run(self, statute_name: str) -> str:
         """Execute the statute lookup tool"""
