@@ -81,14 +81,53 @@ class RAGService:
                 logger.info("✅ System will use TF-IDF keyword search only")
                 self.embedding_gen = None
             else:
-                # Lazy initialization: Don't initialize now, wait until first use
-                # This prevents segfaults at startup
-                logger.info("🔄 Embedding generator will be initialized on first use (lazy loading)")
-                self.embedding_gen = None
-                self._embedding_config = {
-                    "model_name": settings.EMBEDDING_MODEL,
-                    "dimension": settings.EMBEDDING_DIMENSION
-                }
+                # CRITICAL: Initialize embeddings IMMEDIATELY for TRUE hybrid search (BM25 + Embeddings)
+                # Isolate in ThreadPoolExecutor to prevent segfaults from crashing the server
+                logger.info("🚀 Initializing embedding generator NOW for BM25 + Embeddings hybrid search...")
+                try:
+                    from concurrent.futures import ThreadPoolExecutor
+                    import threading
+                    
+                    embedding_result = {"success": False, "embedding_gen": None, "error": None}
+                    
+                    def init_embedding():
+                        try:
+                            from retrieval.embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
+                            embedding_config = EmbeddingConfig(
+                                model_name=settings.EMBEDDING_MODEL,
+                                dimension=settings.EMBEDDING_DIMENSION
+                            )
+                            gen = EmbeddingGenerator(embedding_config)
+                            if gen.model is not None:
+                                embedding_result["success"] = True
+                                embedding_result["embedding_gen"] = gen
+                            else:
+                                embedding_result["error"] = "Model is None"
+                        except Exception as e:
+                            embedding_result["error"] = str(e)
+                    
+                    # Initialize in separate thread with timeout to prevent segfaults
+                    with ThreadPoolExecutor(max_workers=1) as executor:
+                        future = executor.submit(init_embedding)
+                        try:
+                            future.result(timeout=30)
+                            if embedding_result["success"]:
+                                self.embedding_gen = embedding_result["embedding_gen"]
+                                logger.info("✅✅✅ Embedding generator initialized!")
+                                logger.info("✅✅✅ TRUE HYBRID: BM25 + SEMANTIC EMBEDDINGS enabled!")
+                            else:
+                                logger.error(f"❌ Embedding init failed: {embedding_result.get('error')}")
+                                logger.warning("⚠️ Falling back to TF-IDF (not true hybrid)")
+                                self.embedding_gen = None
+                        except Exception as timeout_error:
+                            logger.error(f"❌ Embedding init timed out: {timeout_error}")
+                            logger.warning("⚠️ Falling back to TF-IDF (not true hybrid)")
+                            self.embedding_gen = None
+                            future.cancel()
+                except Exception as embed_error:
+                    logger.error(f"❌ Failed to initialize embeddings: {embed_error}", exc_info=True)
+                    logger.warning("⚠️ Falling back to TF-IDF (not true hybrid)")
+                    self.embedding_gen = None
         except Exception as e:
             logger.warning(f"⚠️ Failed to prepare embedding generator: {e}")
             logger.info("✅ System will use TF-IDF keyword search (stable fallback)")
