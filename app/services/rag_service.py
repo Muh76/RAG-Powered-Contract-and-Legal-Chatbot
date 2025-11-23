@@ -538,6 +538,37 @@ class RAGService:
         
         return results
     
+    def _get_or_init_embedding_gen(self):
+        """Lazy initialization of embedding generator (prevents segfaults at startup)"""
+        if self.embedding_gen is not None:
+            return self.embedding_gen
+        
+        if not hasattr(self, '_embedding_config') or self._embedding_config is None:
+            return None
+        
+        try:
+            from retrieval.embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
+            
+            logger.info("🔄 Initializing embedding generator (lazy load)...")
+            embedding_config = EmbeddingConfig(
+                model_name=self._embedding_config["model_name"],
+                dimension=self._embedding_config["dimension"]
+            )
+            
+            self.embedding_gen = EmbeddingGenerator(embedding_config)
+            
+            if self.embedding_gen.model is None:
+                logger.warning("⚠️ Embedding model not available - using TF-IDF fallback")
+                self.embedding_gen = None
+                return None
+            else:
+                logger.info("✅ Embedding generator initialized (semantic search available)")
+                return self.embedding_gen
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to initialize embedding generator: {e}")
+            self.embedding_gen = None
+            return None
+    
     def _search_with_embeddings(self, query: str, top_k: int, embedding_gen) -> List[Dict[str, Any]]:
         """Search using embeddings and FAISS index"""
         try:
