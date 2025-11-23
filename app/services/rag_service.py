@@ -131,8 +131,26 @@ class RAGService:
             self.bm25_retriever = BM25Retriever(documents)
             logger.info("✅ BM25 retriever initialized")
             
-            # Try to get or initialize embedding generator (lazy)
-            embedding_gen = self._get_or_init_embedding_gen()
+            # Try to initialize embedding generator (lazy) - inline to avoid method call during init
+            embedding_gen = None
+            if hasattr(self, '_embedding_config') and self._embedding_config:
+                try:
+                    from retrieval.embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
+                    embedding_config = EmbeddingConfig(
+                        model_name=self._embedding_config["model_name"],
+                        dimension=self._embedding_config["dimension"]
+                    )
+                    logger.info("🔄 Initializing embedding generator (lazy load for hybrid)...")
+                    embedding_gen = EmbeddingGenerator(embedding_config)
+                    if embedding_gen.model is None:
+                        logger.warning("⚠️ Embedding model not available")
+                        embedding_gen = None
+                    else:
+                        logger.info("✅ Embedding generator initialized for hybrid search")
+                        self.embedding_gen = embedding_gen  # Store for later use
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to initialize embedding generator: {e}")
+                    embedding_gen = None
             
             # Initialize semantic retriever if embeddings are available
             semantic_retriever = None
