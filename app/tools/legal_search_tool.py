@@ -54,11 +54,12 @@ It supports filtering by jurisdiction and document type.
 """
     
     args_schema: type[BaseModel] = LegalSearchInput
+    rag_service: Any = Field(default=None, exclude=True)  # Exclude from Pydantic validation
     
-    def __init__(self, rag_service):
+    def __init__(self, rag_service, **kwargs):
         """Initialize legal search tool with RAG service"""
-        super().__init__()
-        self.rag_service = rag_service
+        super().__init__(**kwargs)
+        object.__setattr__(self, 'rag_service', rag_service)  # Bypass Pydantic validation
     
     def _run(
         self,
