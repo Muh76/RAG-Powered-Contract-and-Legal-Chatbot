@@ -16,12 +16,19 @@ sys.path.insert(0, str(project_root))
 
 from ingestion.loaders.document_loaders import DocumentLoaderFactory
 from ingestion.chunkers.document_chunker import ChunkingStrategy, ChunkingConfig
-from retrieval.embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
+from retrieval.embeddings.openai_embedding_generator import OpenAIEmbeddingGenerator, OpenAIEmbeddingConfig
+from app.core.config import settings
 
 def ingest_data():
     """Ingest documents and create FAISS index"""
     print("🚀 Starting data ingestion...")
     print("=" * 60)
+    
+    # PORTFOLIO MODE: Limit to subset for faster indexing and demo purposes
+    MAX_CHUNKS_TO_INDEX = 5000  # 5K chunks - very fast indexing for portfolio demo (~5-10 min indexing)
+    print(f"📊 PORTFOLIO MODE: Limiting to {MAX_CHUNKS_TO_INDEX:,} chunks for faster indexing")
+    print(f"   ✅ Perfect for demo - can expand later if needed")
+    print("")
     
     embedding_gen = None  # Initialize to None for cleanup
     
@@ -151,35 +158,110 @@ Personal data shall be collected for specified, explicit and legitimate purposes
             chunks = chunker.chunk_document(doc, "sections")
             all_chunks.extend(chunks)
         
-        print(f"✅ Created {len(all_chunks)} chunks")
+        total_chunks_created = len(all_chunks)
+        print(f"✅ Created {total_chunks_created:,} chunks")
         
-        # 3. Generate embeddings
-        print("🧠 Generating embeddings...")
-        embedding_config = EmbeddingConfig(
-            model_name="sentence-transformers/all-MiniLM-L6-v2",
-            dimension=384,
-            batch_size=32
+        # PORTFOLIO MODE: Limit chunks to subset for faster indexing
+        if total_chunks_created > MAX_CHUNKS_TO_INDEX:
+            print(f"\n📊 Applying portfolio mode limit: {MAX_CHUNKS_TO_INDEX:,} chunks (from {total_chunks_created:,} total)")
+            
+            # Strategy: Prioritize UK legislation (important, small) + CUAD sample
+            # Separate chunks by source type
+            uk_legislation_chunks = []
+            cuad_chunks = []
+            other_chunks = []
+            
+            for chunk in all_chunks:
+                source = getattr(chunk.metadata, 'source', '').lower()
+                doc_type = getattr(chunk.metadata, 'document_type', '').lower()
+                
+                if 'legislation' in doc_type or 'act' in source or 'regulation' in source:
+                    uk_legislation_chunks.append(chunk)
+                elif 'cuad' in chunk.chunk_id.lower() or 'contract' in source.lower():
+                    cuad_chunks.append(chunk)
+                else:
+                    other_chunks.append(chunk)
+            
+            # Keep ALL UK legislation (small, important)
+            selected_chunks = uk_legislation_chunks.copy()
+            remaining_slots = MAX_CHUNKS_TO_INDEX - len(selected_chunks)
+            
+            print(f"   ✅ Keeping ALL {len(uk_legislation_chunks)} UK legislation chunks")
+            
+            # Fill remaining slots with CUAD chunks
+            if cuad_chunks and remaining_slots > 0:
+                cuad_to_add = min(remaining_slots, len(cuad_chunks))
+                selected_chunks.extend(cuad_chunks[:cuad_to_add])
+                remaining_slots -= cuad_to_add
+                print(f"   ✅ Adding {cuad_to_add:,} CUAD chunks (sample from {len(cuad_chunks):,} total)")
+            
+            # Add other chunks if space remains
+            if other_chunks and remaining_slots > 0:
+                other_to_add = min(remaining_slots, len(other_chunks))
+                selected_chunks.extend(other_chunks[:other_to_add])
+                print(f"   ✅ Adding {other_to_add:,} other chunks")
+            
+            all_chunks = selected_chunks
+            print(f"   📊 Final selection: {len(all_chunks):,} chunks (reduced from {total_chunks_created:,})")
+            print(f"   ⚡ This will significantly speed up indexing!")
+        else:
+            print(f"   ℹ️  Total chunks ({total_chunks_created:,}) is within limit - no reduction needed")
+        
+        print("")
+        
+        # 3. Generate embeddings using OpenAI API (NO PyTorch - eliminates segfaults!)
+        print("🧠 Generating embeddings using OpenAI API...")
+        print("   ✅ Using OpenAI embeddings (NO PyTorch - eliminates segfaults!)")
+        
+        # Get OpenAI API key
+        api_key = os.getenv("OPENAI_API_KEY") or settings.OPENAI_API_KEY
+        if not api_key:
+            raise ValueError(
+                "OPENAI_API_KEY not found! "
+                "Set it as environment variable: export OPENAI_API_KEY='your-key'"
+            )
+        
+        # Configure OpenAI embeddings with balanced rate limiting
+        # With subset approach (20K chunks), we can use moderate settings
+        embedding_config = OpenAIEmbeddingConfig(
+            api_key=api_key,
+            model=settings.OPENAI_EMBEDDING_MODEL if hasattr(settings, 'OPENAI_EMBEDDING_MODEL') else "text-embedding-3-small",
+            dimension=None,  # Use model default (1536 for text-embedding-3-small)
+            batch_size=50,  # Moderate batch size
+            max_retries=5,  # Retries for network/SSL errors
+            timeout=60,  # Longer timeout
+            requests_per_minute=30  # Moderate rate: 30 requests/min = 2s delay between batches (faster than before)
         )
         
         try:
-            embedding_gen = EmbeddingGenerator(embedding_config)
+            embedding_gen = OpenAIEmbeddingGenerator(embedding_config)
             chunk_texts = [chunk.text for chunk in all_chunks]
+            
+            total_chunks = len(chunk_texts)
+            estimated_batches = (total_chunks + embedding_config.batch_size - 1) // embedding_config.batch_size
+            estimated_minutes = (estimated_batches * 3) // 60  # 3s delay per batch
+            
+            print(f"   Generating embeddings for {total_chunks:,} chunks...")
+            print(f"   📊 Processing in batches of {embedding_config.batch_size} ({estimated_batches:,} batches)")
+            print(f"   ⏳ Estimated time: {estimated_minutes}-{estimated_minutes + 10} minutes (much faster with subset!)")
+            print(f"   💡 The script will automatically handle rate limits")
+            print("")
+            
+            # Generate embeddings with progress tracking
             embeddings = embedding_gen.generate_embeddings_batch(chunk_texts)
-            print(f"✅ Generated {len(embeddings)} embeddings using sentence-transformers")
+            
+            if embeddings and len(embeddings) > 0:
+                embedding_dim = len(embeddings[0])
+                print(f"✅ Generated {len(embeddings)} embeddings using OpenAI API")
+                print(f"   Embedding dimension: {embedding_dim}")
+                print(f"   ✅✅✅ NO PYTORCH - NO SEGFAULTS!")
+            else:
+                raise ValueError("Embedding generation returned empty results")
+                
         except Exception as e:
-            print(f"⚠️ Sentence-transformers failed: {e}")
-            print("🔄 Falling back to TF-IDF...")
-            from sklearn.feature_extraction.text import TfidfVectorizer
-            vectorizer = TfidfVectorizer(
-                max_features=1000,
-                stop_words='english',
-                ngram_range=(1, 2)
-            )
-            chunk_texts = [chunk.text for chunk in all_chunks]
-            tfidf_matrix = vectorizer.fit_transform(chunk_texts)
-            embeddings = tfidf_matrix.toarray().tolist()
-            embedding_gen = vectorizer  # Store for cleanup
-            print(f"✅ Generated {len(embeddings)} embeddings using TF-IDF")
+            print(f"❌ OpenAI embedding generation failed: {e}")
+            print("   Check your OPENAI_API_KEY and API access")
+            raise
         
         # 4. Create FAISS index
         dimension = len(embeddings[0])

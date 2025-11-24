@@ -181,9 +181,23 @@ class AuthUI:
                 else:
                     return True, "Registered but couldn't fetch user profile"
             else:
-                error_detail = response.json().get("detail", "Registration failed")
+                # Handle error response - check if it's JSON
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get("detail", f"Registration failed: {response.status_code}")
+                except (ValueError, requests.exceptions.JSONDecodeError):
+                    # Response is not JSON - likely HTML error page or empty response
+                    if response.text:
+                        error_detail = f"Registration failed: {response.status_code} - {response.text[:200]}"
+                    else:
+                        error_detail = f"Registration failed: {response.status_code} {response.reason}"
+                
                 return False, error_detail
                 
+        except requests.exceptions.Timeout:
+            return False, "Connection timeout: Server took too long to respond"
+        except requests.exceptions.ConnectionError:
+            return False, "Connection error: Could not connect to server. Make sure the backend is running on http://localhost:8000"
         except requests.exceptions.RequestException as e:
             return False, f"Connection error: {str(e)}"
         except Exception as e:
