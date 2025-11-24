@@ -72,7 +72,7 @@ class LegalChatbotUI:
                     "top_k": top_k
                 },
                 headers=headers,
-                timeout=60
+                timeout=120  # Increased timeout for RAG + OpenAI processing
             )
             
             if response.status_code == 200:
@@ -89,7 +89,7 @@ class LegalChatbotUI:
                             "top_k": top_k
                         },
                         headers=headers,
-                        timeout=60
+                        timeout=120  # Increased timeout for RAG + OpenAI processing
                     )
                     if response.status_code == 200:
                         return response.json()
