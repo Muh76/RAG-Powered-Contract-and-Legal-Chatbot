@@ -14,6 +14,12 @@ from retrieval.metadata_filter import MetadataFilter, FilterOperator
 from retrieval.rerankers.cross_encoder_reranker import CrossEncoderReranker
 from app.core.config import settings
 
+# Optional import for OpenAI semantic retriever
+try:
+    from retrieval.openai_semantic_retriever import OpenAISemanticRetriever
+except ImportError:
+    OpenAISemanticRetriever = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,7 +45,7 @@ class AdvancedHybridRetriever:
     def __init__(
         self,
         bm25_retriever: BM25Retriever,
-        semantic_retriever: SemanticRetriever,
+        semantic_retriever,  # Can be SemanticRetriever or OpenAISemanticRetriever
         chunk_metadata: Optional[List[Dict[str, Any]]] = None,
         bm25_weight: float = None,
         semantic_weight: float = None,

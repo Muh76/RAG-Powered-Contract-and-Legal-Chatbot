@@ -208,19 +208,53 @@ class RAGService:
             
             # Initialize semantic retriever if embeddings are available
             semantic_retriever = None
-            if embedding_gen is not None and embedding_gen.model is not None:
-                try:
-                    from retrieval.semantic_retriever import SemanticRetriever
-                    semantic_retriever = SemanticRetriever()
-                    if semantic_retriever.is_ready():
-                        logger.info("✅ Semantic retriever initialized (hybrid: BM25 + Semantic embeddings)")
-                        # Store embedding_gen reference for later use
-                        self.embedding_gen = embedding_gen
-                    else:
-                        logger.warning("Semantic retriever not ready")
+            # Check if we have OpenAI embeddings (which don't need SemanticRetriever with PyTorch)
+            is_openai_embeddings = (
+                embedding_gen is not None and 
+                hasattr(embedding_gen, 'config') and 
+                hasattr(embedding_gen.config, 'api_key') and
+                self.faiss_index is not None
+            )
+            
+            if embedding_gen is not None:
+                # Check if embedding_gen has a model attribute (PyTorch) or is OpenAI-based
+                has_model = hasattr(embedding_gen, 'model') and embedding_gen.model is not None
+                
+                if is_openai_embeddings:
+                    # For OpenAI embeddings, use OpenAI-compatible semantic retriever (NO PYTORCH!)
+                    logger.info("✅ Using OpenAI embeddings for TRUE HYBRID SEARCH (BM25 + Embeddings)")
+                    try:
+                        from retrieval.openai_semantic_retriever import OpenAISemanticRetriever
+                        semantic_retriever = OpenAISemanticRetriever(
+                            embedding_gen=embedding_gen,
+                            faiss_index=self.faiss_index,
+                            chunk_metadata=self.chunk_metadata
+                        )
+                        if semantic_retriever.is_ready():
+                            logger.info("✅✅✅ TRUE HYBRID: BM25 + OpenAI Embeddings (NO PYTORCH!)")
+                        else:
+                            logger.warning("OpenAI semantic retriever not ready")
+                            semantic_retriever = None
+                    except Exception as e:
+                        logger.error(f"Failed to initialize OpenAI semantic retriever: {e}", exc_info=True)
                         semantic_retriever = None
-                except Exception as e:
-                    logger.warning(f"Failed to initialize semantic retriever: {e}")
+                elif has_model:
+                    # PyTorch-based embeddings - can use SemanticRetriever
+                    try:
+                        from retrieval.semantic_retriever import SemanticRetriever
+                        semantic_retriever = SemanticRetriever()
+                        if semantic_retriever.is_ready():
+                            logger.info("✅ Semantic retriever initialized (hybrid: BM25 + Semantic embeddings)")
+                            # Store embedding_gen reference for later use
+                            self.embedding_gen = embedding_gen
+                        else:
+                            logger.warning("Semantic retriever not ready")
+                            semantic_retriever = None
+                    except Exception as e:
+                        logger.warning(f"Failed to initialize semantic retriever: {e}")
+                        semantic_retriever = None
+                else:
+                    logger.warning("Embedding generator available but model is None")
                     semantic_retriever = None
             
             # Fallback to TF-IDF ONLY if embeddings truly failed
@@ -260,10 +294,13 @@ class RAGService:
                 enable_reranking=False  # Disable reranking (optional PyTorch feature)
             )
             
-            if self.embedding_gen and self.embedding_gen.model:
+            # Check if we have true hybrid (BM25 + Embeddings) or degraded (BM25 + TF-IDF)
+            if semantic_retriever and hasattr(semantic_retriever, 'embedding_gen') and semantic_retriever.embedding_gen:
                 logger.info("✅✅✅ TRUE HYBRID SEARCH: BM25 + Semantic Embeddings (PROPER HYBRID!)")
-            else:
+            elif semantic_retriever:
                 logger.warning("⚠️⚠️⚠️ DEGRADED: BM25 + TF-IDF only (keyword search, NOT true hybrid)")
+            else:
+                logger.error("❌❌❌ NO HYBRID: Failed to initialize hybrid retriever")
             
         except Exception as e:
             logger.error(f"Error initializing hybrid retriever: {e}", exc_info=True)
@@ -391,7 +428,13 @@ class RAGService:
         use_hybrid_search = use_hybrid if use_hybrid is not None else self.use_hybrid
         
         if use_hybrid_search and self.hybrid_retriever:
-            logger.info("🔀 Using hybrid search (BM25 + TF-IDF, NO PyTorch!)")
+            # Check if we have true hybrid (BM25 + Embeddings) or degraded (BM25 + TF-IDF)
+            semantic_ret = self.hybrid_retriever.semantic_retriever if self.hybrid_retriever else None
+            is_true_hybrid = semantic_ret and hasattr(semantic_ret, 'embedding_gen') and semantic_ret.embedding_gen
+            if is_true_hybrid:
+                logger.info("🔀 Using TRUE HYBRID search (BM25 + Embeddings, NO PyTorch!)")
+            else:
+                logger.info("🔀 Using hybrid search (BM25 + TF-IDF, keyword-based)")
             public_results = self._hybrid_search(query, top_k, fusion_strategy, metadata_filter)
         else:
             logger.info("🔎 Using TF-IDF search")
@@ -629,7 +672,14 @@ class RAGService:
     def _search_with_embeddings(self, query: str, top_k: int, embedding_gen) -> List[Dict[str, Any]]:
         """Search using embeddings and FAISS index"""
         try:
-            if not self.faiss_index or not embedding_gen or not embedding_gen.model:
+            # Check if embedding_gen is available (works for both OpenAI and PyTorch)
+            if not self.faiss_index or not embedding_gen:
+                return []
+            
+            # For OpenAI embeddings, model property returns self (truthy)
+            # For PyTorch embeddings, model is the actual model object
+            has_model = hasattr(embedding_gen, 'model') and embedding_gen.model is not None
+            if not has_model:
                 return []
             
             # Generate query embedding
@@ -673,9 +723,17 @@ class RAGService:
     def _semantic_search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
         """Semantic search using embeddings (with TF-IDF fallback)"""
         # Try to use embeddings if available
-        embedding_gen = self._get_or_init_embedding_gen()
+        embedding_gen = self.embedding_gen  # Use already initialized embedding_gen
         
-        if embedding_gen and embedding_gen.model is not None and self.faiss_index is not None:
+        # Check if we have a valid embedding generator (works for both OpenAI and PyTorch)
+        has_valid_embeddings = (
+            embedding_gen is not None and 
+            hasattr(embedding_gen, 'model') and 
+            embedding_gen.model is not None and 
+            self.faiss_index is not None
+        )
+        
+        if has_valid_embeddings:
             # Use semantic embeddings (FAISS)
             logger.info("Using semantic embeddings search")
             try:

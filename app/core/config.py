@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     # Primary: Use OpenAI embeddings (no PyTorch required - eliminates segfaults!)
     USE_OPENAI_EMBEDDINGS: bool = True  # Set to False to use sentence-transformers (PyTorch)
     EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"  # Fallback if OpenAI not available
-    EMBEDDING_DIMENSION: int = 1536  # text-embedding-3-small default, or 384 for all-MiniLM-L6-v2
+    EMBEDDING_DIMENSION: int = 1536  # text-embedding-3-small default (1536D), or 384 for all-MiniLM-L6-v2
     EMBEDDING_BATCH_SIZE: int = 32
     
     # Retrieval Configuration
@@ -43,13 +43,13 @@ class Settings(BaseSettings):
     RERANKER_BATCH_SIZE: int = 32
     
     # Hybrid Search Configuration
-    HYBRID_SEARCH_BM25_WEIGHT: float = 0.4
-    HYBRID_SEARCH_SEMANTIC_WEIGHT: float = 0.6
+    HYBRID_SEARCH_BM25_WEIGHT: float = 0.5  # Increased from 0.4 - BM25 is good for exact matches
+    HYBRID_SEARCH_SEMANTIC_WEIGHT: float = 0.5  # Decreased from 0.6 - balance with BM25
     HYBRID_SEARCH_FUSION_STRATEGY: str = "rrf"  # "rrf" or "weighted"
-    HYBRID_SEARCH_TOP_K_BM25: int = 20  # Retrieve more for fusion
-    HYBRID_SEARCH_TOP_K_SEMANTIC: int = 20
-    HYBRID_SEARCH_TOP_K_FINAL: int = 10
-    HYBRID_SEARCH_RRF_K: int = 60  # RRF parameter
+    HYBRID_SEARCH_TOP_K_BM25: int = 30  # Increased from 20 - retrieve more candidates for better fusion
+    HYBRID_SEARCH_TOP_K_SEMANTIC: int = 30  # Increased from 20 - retrieve more candidates for better fusion
+    HYBRID_SEARCH_TOP_K_FINAL: int = 15  # Increased from 10 - return more results for better coverage
+    HYBRID_SEARCH_RRF_K: int = 60  # RRF parameter (standard value)
     
     # Security Configuration
     SECRET_KEY: str = "your-secret-key-change-in-production"
