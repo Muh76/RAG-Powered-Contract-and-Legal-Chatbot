@@ -89,6 +89,12 @@ class RAGService:
                 try:
                     from retrieval.embeddings.openai_embedding_generator import OpenAIEmbeddingGenerator, OpenAIEmbeddingConfig
 
+                    # #region debug: Check OpenAI API key
+                    import json
+                    with open('/Users/javadbeni/Desktop/Legal Chatbot/.cursor/debug.log', 'a') as f:
+                        f.write(json.dumps({"location": "rag_service.py:93", "message": "Checking OpenAI API key", "data": {"has_key": bool(settings.OPENAI_API_KEY), "key_length": len(settings.OPENAI_API_KEY) if settings.OPENAI_API_KEY else 0, "model": getattr(settings, 'OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small')}, "timestamp": int(time.time() * 1000), "sessionId": "debug-session", "runId": "check-embeddings", "hypothesisId": "A"}) + "\n")
+                    # #endregion
+
                     # Check if OpenAI API key is available
                     api_key = settings.OPENAI_API_KEY
                     if not api_key:
@@ -110,7 +116,16 @@ class RAGService:
 
                         # Test that it actually works
                         try:
+                            # #region debug: Test embedding generation
+                            import time
+                            with open('/Users/javadbeni/Desktop/Legal Chatbot/.cursor/debug.log', 'a') as f:
+                                f.write(json.dumps({"location": "rag_service.py:112", "message": "Testing OpenAI embedding generation", "data": {"model": self.embedding_gen.model_name}, "timestamp": int(time.time() * 1000), "sessionId": "debug-session", "runId": "check-embeddings", "hypothesisId": "A"}) + "\n")
+                            # #endregion
                             test_emb = self.embedding_gen.generate_embedding("test")
+                            # #region debug: Embedding test result
+                            with open('/Users/javadbeni/Desktop/Legal Chatbot/.cursor/debug.log', 'a') as f:
+                                f.write(json.dumps({"location": "rag_service.py:114", "message": "OpenAI embedding test result", "data": {"success": bool(test_emb and len(test_emb) > 0), "dimension": len(test_emb) if test_emb else 0}, "timestamp": int(time.time() * 1000), "sessionId": "debug-session", "runId": "check-embeddings", "hypothesisId": "A"}) + "\n")
+                            # #endregion
                             if test_emb and len(test_emb) > 0:
                                 logger.info(f"✅✅✅ OpenAI embedding generator initialized!")
                                 logger.info(f"✅ Embedding generation verified: {len(test_emb)} dimensions")
@@ -119,6 +134,10 @@ class RAGService:
                             else:
                                 raise RuntimeError("Embedding generation returned empty result")
                         except Exception as test_error:
+                            # #region debug: Embedding test failure
+                            with open('/Users/javadbeni/Desktop/Legal Chatbot/.cursor/debug.log', 'a') as f:
+                                f.write(json.dumps({"location": "rag_service.py:121", "message": "OpenAI embedding test failed", "data": {"error": str(test_error), "error_type": type(test_error).__name__}, "timestamp": int(time.time() * 1000), "sessionId": "debug-session", "runId": "check-embeddings", "hypothesisId": "A"}) + "\n")
+                            # #endregion
                             logger.error(f"❌ OpenAI embedding generation test failed: {test_error}")
                             logger.warning("⚠️ Check OPENAI_API_KEY and API access")
                             logger.warning("⚠️ Falling back to TF-IDF (not true hybrid)")
