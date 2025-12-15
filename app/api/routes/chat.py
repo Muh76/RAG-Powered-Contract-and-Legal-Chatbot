@@ -144,8 +144,22 @@ def get_llm_service():
     global llm_service
     if llm_service is None:
         logger.info("🔄 Initializing LLMService...")
-        llm_service = LLMService()  # Let exception propagate
-        logger.info("✅ LLMService initialized")
+        try:
+            # Check if API key is available before initializing
+            api_key = settings.OPENAI_API_KEY or os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                error_msg = "OPENAI_API_KEY not set in settings or environment"
+                logger.error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
+            logger.info(f"✅ OpenAI API key found (length: {len(api_key)})")
+            
+            llm_service = LLMService()  # Let exception propagate
+            logger.info(f"✅ LLMService initialized: model={llm_service.model_name}, max_tokens={llm_service.max_tokens}")
+        except Exception as e:
+            error_type = type(e).__name__
+            error_msg = str(e)
+            logger.error(f"❌ LLMService initialization failed: {error_type}: {error_msg}", exc_info=True)
+            raise
     return llm_service
 
 def map_reason_to_safety_flag(reason: str) -> SafetyFlag:
@@ -186,16 +200,6 @@ async def chat(
     # Using explicit assignment (not type hints) to ensure Python recognizes them as local variables
     llm_result = None  # type: Optional[Dict[str, Any]]
     response_mode = "public"  # type: str
-    
-    # #region debug: Function entry
-    import json
-    import time as time_module
-    try:
-        with open('/Users/javadbeni/Desktop/Legal Chatbot/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({"location": "chat.py:183", "message": "Chat endpoint called", "data": {"query_length": len(request.query) if request else 0, "user_id": current_user.id if current_user else None, "llm_result_initialized": llm_result is None, "response_mode_initialized": response_mode}, "timestamp": int(time_module.time() * 1000), "sessionId": "debug-session", "runId": "fix-llm-result", "hypothesisId": "A"}) + "\n")
-    except Exception as log_err:
-        pass  # Don't fail if logging fails
-    # #endregion
     start_time = time.time()
     
     try:
@@ -309,6 +313,7 @@ async def chat(
             retrieval_time_ms = (time.time() - retrieval_start) * 1000
             
             # CRITICAL: Post-retrieval filtering to remove irrelevant Acts
+
             # Extract key terms from query to filter relevant Acts
             query_lower = request.query.lower()
             act_keywords = {
@@ -390,6 +395,7 @@ async def chat(
                     legal_jurisdiction="UK"
                 )
             
+
             # Extract chunks and metadata with safe None checks
             chunks = [r.get("text", "") for r in retrieval_result if isinstance(r, dict)]
             chunk_metadata = [r.get("metadata", {}) for r in retrieval_result if isinstance(r, dict)]
@@ -443,14 +449,10 @@ async def chat(
         # 3. Generate answer using LLM with role-based mode
         generation_start = time.time()
         # Note: llm_result and response_mode are already initialized at function start
-        # #region debug: Track llm_result initialization
-        import json
-        import time as time_module
-        with open('/Users/javadbeni/Desktop/Legal Chatbot/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({"location": "chat.py:429", "message": "Initializing llm_result and response_mode", "data": {"llm_result_initialized": llm_result is None, "response_mode_initialized": response_mode}, "timestamp": int(time_module.time() * 1000), "sessionId": "debug-session", "runId": "fix-llm-result", "hypothesisId": "A"}) + "\n")
-        # #endregion
         try:
+            logger.info(f"🔄 Getting LLM service...")
             llm = get_llm_service()
+            logger.info(f"✅ LLM service obtained: {type(llm).__name__}")
             
             # Determine mode based on user role and request mode
             # If user is admin or solicitor, use solicitor mode; otherwise use public mode
@@ -519,11 +521,8 @@ async def chat(
                         )
             
             # Use generate_legal_answer for proper mode-based responses with citations
-            # #region debug: Before llm_result assignment
-            with open('/Users/javadbeni/Desktop/Legal Chatbot/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({"location": "chat.py:500", "message": "Before llm_result assignment", "data": {"response_mode": response_mode, "llm_result_before": llm_result is None}, "timestamp": int(time_module.time() * 1000), "sessionId": "debug-session", "runId": "fix-llm-result", "hypothesisId": "A"}) + "\n")
-            # #endregion
             loop = asyncio.get_event_loop()
+            logger.info(f"🔄 Calling LLM service with query length: {len(request.query)}, chunks: {len(retrieval_result)}, mode: {response_mode}")
             llm_result = await loop.run_in_executor(
                 _executor,
                 lambda: llm.generate_legal_answer(
@@ -532,36 +531,40 @@ async def chat(
                     mode=response_mode
                 )
             )
-            # #region debug: After llm_result assignment
-            with open('/Users/javadbeni/Desktop/Legal Chatbot/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({"location": "chat.py:509", "message": "After llm_result assignment", "data": {"llm_result_type": type(llm_result).__name__, "llm_result_is_dict": isinstance(llm_result, dict), "llm_result_is_none": llm_result is None}, "timestamp": int(time_module.time() * 1000), "sessionId": "debug-session", "runId": "fix-llm-result", "hypothesisId": "A"}) + "\n")
-            # #endregion
             generation_time_ms = (time.time() - generation_start) * 1000
+            logger.info(f"✅ LLM service returned result: type={type(llm_result)}, is_dict={isinstance(llm_result, dict)}")
             
+
             # Extract answer from LLM result
             # Safely extract LLM result with None checks
             answer = llm_result.get("answer", "") if llm_result and isinstance(llm_result, dict) else ""
             citation_validation = llm_result.get("citation_validation", {}) if llm_result and isinstance(llm_result, dict) else {}
             
+            logger.info(f"📝 Extracted answer: length={len(answer) if answer else 0}, starts_with_error={answer.startswith('Error generating response:') if answer else False}")
+            
+            # Check if the answer contains an error message
+            if answer and answer.startswith("Error generating response:"):
+                error_detail = answer.replace("Error generating response: ", "")
+                logger.error(f"❌ LLM returned error in answer: {error_detail}")
+                # Check citation_validation for more error details
+                if isinstance(citation_validation, dict):
+                    error_type = citation_validation.get("error_type", "Unknown")
+                    full_error = citation_validation.get("error", error_detail)
+                    logger.error(f"❌ Error type: {error_type}, Full error: {full_error}")
+                # Don't show the technical error to users - use generic message
+                answer = "I encountered an error while generating a response. Please try again."
+            
             if not answer:
+                logger.warning("⚠️ LLM returned empty answer")
                 answer = "I couldn't generate a response. Please try again."
             
         except Exception as e:
-            # #region debug: Exception in LLM generation
-            with open('/Users/javadbeni/Desktop/Legal Chatbot/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({"location": "chat.py:520", "message": "Exception in LLM generation", "data": {"error": str(e), "error_type": type(e).__name__, "llm_result_before_set": llm_result is None}, "timestamp": int(time_module.time() * 1000), "sessionId": "debug-session", "runId": "fix-llm-result", "hypothesisId": "A"}) + "\n")
-            # #endregion
-            logger.error(f"LLM generation error: {e}", exc_info=True)
+            logger.error(f"❌ LLM generation exception in chat endpoint: {type(e).__name__}: {e}", exc_info=True)
             generation_time_ms = (time.time() - generation_start) * 1000
             answer = "I encountered an error while generating a response. Please try again."
-            citation_validation = {"has_citations": False, "error": str(e)}
+            citation_validation = {"has_citations": False, "error": str(e), "error_type": type(e).__name__}
             llm_result = None  # Ensure llm_result is set even on error
-            # #region debug: After setting llm_result in except
-            with open('/Users/javadbeni/Desktop/Legal Chatbot/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({"location": "chat.py:525", "message": "After setting llm_result in except", "data": {"llm_result_is_none": llm_result is None, "response_mode": response_mode}, "timestamp": int(time_module.time() * 1000), "sessionId": "debug-session", "runId": "fix-llm-result", "hypothesisId": "A"}) + "\n")
-            # #endregion
-        
-        # 4. Apply comprehensive guardrails
+            # 4. Apply comprehensive guardrails
         guardrails_applied = False
         guardrails_result = None
         try:
@@ -676,13 +679,7 @@ async def chat(
                 enhanced_reasoning = safety_reasoning + f" | Guardrails failed: {failure_str}"
         else:
             enhanced_reasoning = safety_reasoning + " | Guardrails: Not applied"
-        
-        # #region debug: Before accessing llm_result at line 661-662
-        with open('/Users/javadbeni/Desktop/Legal Chatbot/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({"location": "chat.py:658", "message": "Before accessing llm_result for ChatResponse", "data": {"llm_result_is_none": llm_result is None, "llm_result_type": type(llm_result).__name__ if llm_result else "None", "response_mode": response_mode, "llm_result_is_dict": isinstance(llm_result, dict) if llm_result else False}, "timestamp": int(time_module.time() * 1000), "sessionId": "debug-session", "runId": "fix-llm-result", "hypothesisId": "A"}) + "\n")
-        # #endregion
-        
-        # Extract model_used and response_mode safely before ChatResponse construction
+            # Extract model_used and response_mode safely before ChatResponse construction
         model_used = llm_result.get("model_used", settings.OPENAI_MODEL) if llm_result and isinstance(llm_result, dict) else settings.OPENAI_MODEL
         final_response_mode = llm_result.get("mode", response_mode) if llm_result and isinstance(llm_result, dict) else response_mode
         
@@ -722,15 +719,6 @@ async def chat(
     except HTTPException:
         raise
     except Exception as e:
-        # #region debug: Exception in chat endpoint
-        try:
-            import json as _json
-            import time as _time
-            with open('/Users/javadbeni/Desktop/Legal Chatbot/.cursor/debug.log', 'a') as f:
-                f.write(_json.dumps({"location": "chat.py:720", "message": "Exception in chat endpoint", "data": {"error": str(e), "error_type": type(e).__name__, "llm_result_exists": "llm_result" in locals(), "response_mode_exists": "response_mode" in locals()}, "timestamp": int(_time.time() * 1000), "sessionId": "debug-session", "runId": "fix-llm-result", "hypothesisId": "A"}) + "\n")
-        except:
-            pass
-        # #endregion
         logger.error(f"Error in chat endpoint: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,

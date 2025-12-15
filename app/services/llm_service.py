@@ -28,7 +28,7 @@ class LLMService:
         
         self.client = OpenAI(api_key=api_key)
         self.model_name = settings.OPENAI_MODEL
-        self.max_tokens = 500
+        self.max_tokens = 2000  # Increased from 500 to allow longer legal responses
         self.temperature = 0.1  # Low temperature for consistent legal responses
     
     def generate_legal_answer(
@@ -38,7 +38,7 @@ class LLMService:
         mode: str = "solicitor"
     ) -> Dict[str, Any]:
         """Generate a legal answer with citations based on retrieved chunks"""
-            # Prepare context from retrieved chunks with source IDs
+        # Prepare context from retrieved chunks with source IDs
         context_parts = []
         citations = []
         
@@ -122,6 +122,7 @@ EXAMPLE BAD RESPONSE (DO NOT DO THIS):
 "Employment rights include..." <- No citation = FORBIDDEN!"""
         
         try:
+            logger.info(f"🔄 Calling OpenAI API: model={self.model_name}, max_tokens={self.max_tokens}, prompt_length={len(user_prompt)}")
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[
@@ -131,8 +132,19 @@ EXAMPLE BAD RESPONSE (DO NOT DO THIS):
                 max_tokens=self.max_tokens,
                 temperature=self.temperature
             )
+            logger.info(f"✅ OpenAI API call successful: response_id={response.id if hasattr(response, 'id') else 'N/A'}")
+            
+            if not response.choices or len(response.choices) == 0:
+                logger.error("❌ OpenAI API returned empty response - no choices available")
+                raise ValueError("OpenAI API returned empty response - no choices available")
             
             answer = response.choices[0].message.content
+            
+            if not answer:
+                logger.error(f"❌ OpenAI API returned empty answer content. Response object: {type(response).__name__}, choices count: {len(response.choices) if response.choices else 0}")
+                raise ValueError("OpenAI API returned empty answer content")
+            
+            logger.info(f"✅ LLM generated answer successfully (length: {len(answer)} chars)")
             
             # Validate citations in the answer
             citation_validation = self._validate_citations(answer, len(citations))
@@ -147,11 +159,25 @@ EXAMPLE BAD RESPONSE (DO NOT DO THIS):
             }
             
         except Exception as e:
-            logger.error(f"Error generating answer: {e}")
+            error_type = type(e).__name__
+            error_msg = str(e)
+            logger.error(f"❌ Error generating answer: {error_type}: {error_msg}", exc_info=True)
+            
+            # Log specific error types for better debugging
+            if "API key" in error_msg or "authentication" in error_msg.lower():
+                logger.error("❌ OpenAI API authentication failed - check OPENAI_API_KEY")
+            elif "rate limit" in error_msg.lower():
+                logger.error("❌ OpenAI API rate limit exceeded")
+            elif "timeout" in error_msg.lower():
+                logger.error("❌ OpenAI API request timed out")
+            elif "model" in error_msg.lower() and "not found" in error_msg.lower():
+                logger.error(f"❌ OpenAI model not found: {self.model_name}")
+            
+            # Return error details for debugging
             return {
-                "answer": f"Error generating response: {str(e)}",
+                "answer": f"Error generating response: {error_msg}",
                 "citations": [],
-                "citation_validation": {"has_citations": False, "error": str(e)},
+                "citation_validation": {"has_citations": False, "error": error_msg, "error_type": error_type},
                 "model_used": self.model_name,
                 "mode": mode,
                 "query": query

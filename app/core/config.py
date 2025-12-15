@@ -3,6 +3,18 @@
 from pydantic_settings import BaseSettings
 from typing import List, Optional
 import os
+from pathlib import Path
+
+# Load .env file explicitly to ensure API keys are loaded
+try:
+    from dotenv import load_dotenv
+    # Load .env from project root
+    env_path = Path(__file__).parent.parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+except ImportError:
+    # python-dotenv not installed, pydantic-settings will load .env automatically
+    pass
 
 
 class Settings(BaseSettings):
