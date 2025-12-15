@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI):
 # Create FastAPI application
 app = FastAPI(
     title="Legal Chatbot API",
-    description="AI-Powered Legal Assistant with RAG",
+    description="AI-Powered Legal Assistant with RAG. **Note:** Most endpoints require authentication. Click the 'Authorize' button (lock icon) in Swagger UI and provide your Bearer token.",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",

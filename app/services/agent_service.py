@@ -187,7 +187,7 @@ If the user's query is complex, break it down and use multiple tools to gather a
                 temperature=0.1,  # Low temperature for consistent legal responses
                 api_key=api_key
             )
-            
+
             # Initialize agent based on LangChain version
             if LANGCHAIN_VERSION == "1.0+":
                 # Use LangGraph for LangChain 1.0+
@@ -420,7 +420,7 @@ If the user's query is complex, break it down and use multiple tools to gather a
                                             break
                             
                             if result_messages:
-                                # Get the last message which should be the AI response
+                    # Get the last message which should be the AI response
                                 last_msg = result_messages[-1]
                                 logger.debug(f"  Last message type: {type(last_msg).__name__}")
                                 answer = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
@@ -516,7 +516,7 @@ If the user's query is complex, break it down and use multiple tools to gather a
                     if len(step) >= 2:
                         tool_action = step[0]
                         tool_result = step[1]
-                        
+                    
                         tool_name = tool_action.tool if hasattr(tool_action, "tool") else "unknown"
                         tool_input = tool_action.tool_input if hasattr(tool_action, "tool_input") else {}
                         

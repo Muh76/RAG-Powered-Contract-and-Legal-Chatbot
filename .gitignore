@@ -64,6 +64,7 @@ data/processed/
 data/embeddings/
 *.csv
 *.json
+!data/uk_legislation/consumer_rights_act.json
 *.pkl
 *.pickle
 
@@ -132,6 +133,9 @@ grafana_data/
 *.bak
 *.backup
 *.old
-data/
+data/*
+!data/uk_legislation/
+data/uk_legislation/*
+!data/uk_legislation/consumer_rights_act.json
 *.pkl
 *.bin

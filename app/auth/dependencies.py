@@ -12,6 +12,8 @@ from app.core.errors import AuthenticationError, AuthorizationError
 from app.core.database import get_db
 
 # HTTP Bearer token security
+# auto_error=True means 403 is raised when no token provided (FastAPI default)
+# This happens BEFORE get_current_user is called, so we can't customize the error message here
 security = HTTPBearer()
 
 

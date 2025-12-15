@@ -75,11 +75,12 @@ async def liveness_probe():
 
 @router.get("/health/ready")
 async def readiness_probe():
-    """Kubernetes readiness probe"""
+    """Kubernetes readiness probe - only requires database (FAISS is in-memory)"""
     dependencies = await health_checker.check_all_dependencies()
     
     # Check if critical services are ready
-    critical_services = ["database", "vector_store"]
+    # Only database is critical - FAISS is in-memory and loads on-demand
+    critical_services = ["database"]
     ready = all(
         dependencies[service].get("status") == "healthy"
         for service in critical_services

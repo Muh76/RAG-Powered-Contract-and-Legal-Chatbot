@@ -127,7 +127,7 @@ class HealthChecker:
             return result
     
     async def check_vector_store(self) -> Dict[str, Any]:
-        """Check Qdrant vector store health"""
+        """Check FAISS vector store health (system uses FAISS, not Qdrant)"""
         cache_key = "vector_store"
         if cache_key in self._cache:
             cached_time, cached_result = self._cache[cache_key]
@@ -135,34 +135,59 @@ class HealthChecker:
                 return cached_result
         
         try:
-            if not QDRANT_AVAILABLE:
-                result = {
-                    "status": "unknown",
-                    "message": "qdrant-client not available",
-                    "response_time_ms": 0,
-                }
-            else:
-                start_time = time.time()
-                from qdrant_client import QdrantClient
-                client = QdrantClient(url=settings.VECTOR_DB_URL, timeout=5)
-                # Try to get collections to verify connection
-                collections = client.get_collections()
-                response_time = (time.time() - start_time) * 1000
-                
+            start_time = time.time()
+            from pathlib import Path
+            
+            # Check if FAISS index file exists (system uses FAISS, not Qdrant)
+            possible_paths = [
+                Path("data/faiss_index.bin"),
+                Path("data/processed/faiss_index.bin"),
+                Path("notebooks/phase1/data/faiss_index.bin"),
+                Path.cwd() / "data" / "faiss_index.bin",
+            ]
+            
+            faiss_found = any(path.exists() for path in possible_paths)
+            response_time = (time.time() - start_time) * 1000
+            
+            if faiss_found:
                 result = {
                     "status": "healthy",
-                    "message": "Vector store connection successful",
+                    "message": "FAISS index file found",
                     "response_time_ms": round(response_time, 2),
-                    "collections_count": len(collections.collections) if collections else 0,
                 }
+            else:
+                # Check if Qdrant is available (optional, for future use)
+                if QDRANT_AVAILABLE and hasattr(settings, 'VECTOR_DB_URL') and settings.VECTOR_DB_URL:
+                    try:
+                        from qdrant_client import QdrantClient
+                        client = QdrantClient(url=settings.VECTOR_DB_URL, timeout=5)
+                        collections = client.get_collections()
+                        result = {
+                            "status": "healthy",
+                            "message": "Qdrant vector store connection successful",
+                            "response_time_ms": round(response_time, 2),
+                            "collections_count": len(collections.collections) if collections else 0,
+                        }
+                    except Exception as qdrant_error:
+                        result = {
+                            "status": "unknown",
+                            "message": f"FAISS index not found and Qdrant unavailable: {str(qdrant_error)}",
+                            "response_time_ms": round(response_time, 2),
+                        }
+                else:
+                    result = {
+                        "status": "unknown",
+                        "message": "FAISS index file not found (system may use in-memory index)",
+                        "response_time_ms": round(response_time, 2),
+                    }
             
             self._cache[cache_key] = (time.time(), result)
             return result
             
         except Exception as e:
             result = {
-                "status": "unhealthy",
-                "message": f"Vector store connection failed: {str(e)}",
+                "status": "unknown",
+                "message": f"Vector store check failed: {str(e)}",
                 "response_time_ms": 0,
             }
             logger.warning(f"Vector store health check failed: {e}")

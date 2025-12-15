@@ -85,10 +85,10 @@ class RAGService:
                 # Use OpenAI embeddings (NO PyTorch - eliminates segfaults completely!)
                 logger.info("🚀 Initializing OpenAI embedding generator for BM25 + Embeddings hybrid search...")
                 logger.info("✅ Using OpenAI API - NO PyTorch required (eliminates segfaults!)")
-                
+
                 try:
                     from retrieval.embeddings.openai_embedding_generator import OpenAIEmbeddingGenerator, OpenAIEmbeddingConfig
-                    
+
                     # Check if OpenAI API key is available
                     api_key = settings.OPENAI_API_KEY
                     if not api_key:
@@ -98,16 +98,16 @@ class RAGService:
                         self.embedding_gen = None
                     else:
                         logger.info("✅ OpenAI API key found, initializing OpenAI embeddings...")
-                        
+
                         # Initialize OpenAI embedding generator
                         embedding_config = OpenAIEmbeddingConfig(
                             api_key=api_key,
                             model=settings.OPENAI_EMBEDDING_MODEL if hasattr(settings, 'OPENAI_EMBEDDING_MODEL') else "text-embedding-3-small",
                             dimension=settings.EMBEDDING_DIMENSION if settings.EMBEDDING_DIMENSION else None
                         )
-                        
+
                         self.embedding_gen = OpenAIEmbeddingGenerator(embedding_config)
-                        
+
                         # Test that it actually works
                         try:
                             test_emb = self.embedding_gen.generate_embedding("test")
