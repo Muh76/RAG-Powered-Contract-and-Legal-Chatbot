@@ -22,6 +22,24 @@ from app.core.errors import AuthenticationError, NotFoundError
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
 
+@router.get("")
+async def auth_info():
+    """Get authentication endpoint information"""
+    return {
+        "message": "Authentication endpoints",
+        "endpoints": {
+            "register": "POST /api/v1/auth/register - Register a new user",
+            "login": "POST /api/v1/auth/login - Login with email and password",
+            "refresh": "POST /api/v1/auth/refresh - Refresh access token",
+            "logout": "POST /api/v1/auth/logout - Logout current session",
+            "me": "GET /api/v1/auth/me - Get current user info",
+            "change_password": "POST /api/v1/auth/change-password - Change password",
+            "oauth": "GET /api/v1/auth/oauth/{provider}/authorize - OAuth login (Google, GitHub, Microsoft)"
+        },
+        "docs": "/docs#/authentication"
+    }
+
+
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
 async def register(user_data: UserCreate, db: Session = Depends(get_db)):
     """Register a new user"""

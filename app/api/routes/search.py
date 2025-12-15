@@ -102,6 +102,25 @@ def create_metadata_filter(metadata_filters: List[MetadataFilterRequest]) -> Opt
     return metadata_filter if not metadata_filter.is_empty() else None
 
 
+@router.get("/search/hybrid")
+async def hybrid_search_info():
+    """Get hybrid search endpoint information"""
+    return {
+        "message": "Hybrid search endpoint - Use POST method",
+        "method": "POST",
+        "endpoint": "/api/v1/search/hybrid",
+        "description": "Hybrid search combining BM25 + Semantic search with metadata filtering",
+        "requires_auth": True,
+        "required_role": "Any authenticated user",
+        "example_request": {
+            "query": "What are employee rights in the UK?",
+            "top_k": 5,
+            "fusion_strategy": "rrf"
+        },
+        "docs": "/docs#/search"
+    }
+
+
 @router.post("/search/hybrid", response_model=HybridSearchResponse)
 async def hybrid_search(
     request: HybridSearchRequest,

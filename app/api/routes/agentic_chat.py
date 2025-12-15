@@ -85,6 +85,23 @@ def map_reason_to_safety_flag(reason: str) -> SafetyFlag:
         return SafetyFlag.NON_LEGAL
 
 
+@router.get("/agentic-chat")
+async def agentic_chat_info():
+    """Get agentic chat endpoint information"""
+    return {
+        "message": "Agentic chat endpoint - Use POST method",
+        "method": "POST",
+        "endpoint": "/api/v1/agentic-chat",
+        "description": "Agentic chat with LangChain agents and tool calling",
+        "requires_auth": True,
+        "example_request": {
+            "query": "What is the Sale of Goods Act 1979?",
+            "mode": "public"
+        },
+        "docs": "/docs#/agentic-chat"
+    }
+
+
 @router.post("/agentic-chat", response_model=AgenticChatResponse)
 async def agentic_chat(
     request: AgenticChatRequest,
