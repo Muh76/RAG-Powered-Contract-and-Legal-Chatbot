@@ -35,6 +35,11 @@
 - **Status**: ✅ Complete
 - **Location**: `data/uk_legislation/sale_of_goods_act.json`
 
+#### Consumer Rights Act 2015
+- **Status**: ✅ Key operative sections (9, 10, 11, 20-24, 30-31, 34, 49, 54) ingested with full text
+- **Location**: `data/uk_legislation/consumer_rights_act.json`
+- **Content Length**: ~29KB (direct extracts from legislation.gov.uk)
+
 ### Missing Legislation Files
 
 All of these have placeholder files created but need manual content:

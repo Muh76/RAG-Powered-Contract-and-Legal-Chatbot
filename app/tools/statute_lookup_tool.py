@@ -91,7 +91,7 @@ The tool will search for and return relevant sections from the specified statute
                     metadata_filter=None,  # No filter - broader search
                     include_explanation=True,
                     highlight_sources=True
-                )
+            )
             
             if not results:
                 return f"Could not find information about '{statute_name}' in the knowledge base. Please check the spelling or try a different search."

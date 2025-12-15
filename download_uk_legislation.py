@@ -54,6 +54,17 @@ def download_uk_legislation():
                 "Harassment",
                 "Victimisation"
             ]
+        },
+        "consumer_rights_act": {
+            "title": "Consumer Rights Act 2015",
+            "url": "https://www.legislation.gov.uk/ukpga/2015/15/contents",
+            "sections": [
+                "Goods to be of satisfactory quality (Section 9)",
+                "Goods to be fit for particular purpose (Section 10)",
+                "Goods to match description (Section 11)",
+                "Right to reject (Sections 20-24)",
+                "Services to be performed with reasonable care and skill (Section 49)"
+            ]
         }
     }
     
