@@ -46,8 +46,8 @@ class GuardrailsService:
             return {
                 "valid": False,
                 "reason": "domain_gating",
-                "message": "I specialize in legal questions. Please ask about UK law, contracts, employment rights, or other legal matters.",
-                "suggestion": "Try rephrasing your question to focus on legal aspects."
+                "message": "I can only answer questions about law and legal matters. This question appears to be outside that scope. I can help with UK law, contracts, employment rights, data protection, and related legal topics.",
+                "suggestion": "Please rephrase your question to focus on a legal aspect, or ask about UK law, contracts, or legal rights."
             }
         
         # Check 2: Harmful content detection
@@ -56,7 +56,7 @@ class GuardrailsService:
                 return {
                     "valid": False,
                     "reason": "harmful_content",
-                    "message": "I cannot provide assistance with harmful or dangerous content.",
+                    "message": "I cannot provide assistance with this type of content. I only answer legal questions.",
                     "suggestion": "Please ask about legal matters instead."
                 }
         
@@ -65,7 +65,7 @@ class GuardrailsService:
             return {
                 "valid": False,
                 "reason": "insufficient_legal_relevance",
-                "message": "This doesn't appear to be a legal question. I can help with UK law, contracts, employment rights, data protection, and other legal matters.",
+                "message": "This doesn't appear to be a legal question. I only answer questions about UK law, contracts, employment rights, data protection, and other legal matters. This is not legal advice; for advice please consult a qualified solicitor.",
                 "suggestion": "Could you rephrase this as a legal question?"
             }
         
