@@ -1,5 +1,7 @@
 # Phase 5: Next Steps Roadmap
 
+**Updated:** Phases 5.1–5.4 are complete. Document upload (5.3) and frontend auth (5.4) are **DONE**. Sections below marked "Optional / Roadmap" are not required for current completion.
+
 ## ✅ Completed
 
 ### Phase 5.1: Database Setup & Migrations - ✅ COMPLETE
@@ -17,155 +19,63 @@
 - ✅ User activity logging
 - ✅ Verification scripts and documentation
 
-## 🎯 Recommended Next Steps
+### Phase 5.3: Document Upload System - ✅ COMPLETE (DONE)
+- ✅ Document upload & parsing (PDF, DOCX, TXT)
+- ✅ User-scoped storage (local filesystem, user_id-based paths)
+- ✅ Document processing pipeline (chunking, embedding, user-scoped indexing)
+- ✅ Private corpus retrieval; combined public + private retrieval (RRF)
+- ✅ Document management API (upload, list, get, update, delete, reprocess)
+- ✅ RBAC (Solicitor/Admin upload); user ownership and document-level access
 
-### Step 3: Document Upload System (HIGH PRIORITY) ⭐
+### Phase 5.4: Frontend Authentication Integration - ✅ COMPLETE (DONE)
+- ✅ Login/Register UI (Streamlit)
+- ✅ OAuth buttons (Google, GitHub, Microsoft) and callback handling
+- ✅ Protected routes; token storage and refresh; auto-logout on expiry
+- ✅ Role-based UI (Public / Solicitor / Admin); document management UI for Solicitor/Admin
 
-**Current Status**: Mock implementation exists but needs full functionality
+## 🔜 Optional / Roadmap (Not Required for Current Completion)
 
-**Features to Implement**:
+The following are **optional** enhancements or **roadmap** items. Historical "Step" numbering is preserved for reference.
 
-1. **Document Upload & Parsing**
-   - ✅ Endpoint exists (protected with RBAC)
-   - ❌ Real PDF/DOCX parsing
-   - ❌ File validation (type, size, virus scanning)
-   - ❌ Storage solution (local filesystem or cloud storage)
+### Step 4: OAuth2 Polish (OPTIONAL)
 
-2. **User-Specific Document Storage**
-   - ❌ Database model for user documents
-   - ❌ Document metadata storage
-   - ❌ User-document relationships
-   - ❌ Storage path organization by user_id
-
-3. **Document Processing Pipeline**
-   - ❌ Document parsing (PDF, DOCX, TXT)
-   - ❌ Text extraction and cleaning
-   - ❌ Document chunking (with overlap)
-   - ❌ Embedding generation for uploaded documents
-   - ❌ Vector storage (user-scoped indexes)
-
-4. **Private Document Indexing**
-   - ❌ Separate vector indexes per user
-   - ❌ User-specific chunk metadata
-   - ❌ Index management (create, update, delete)
-
-5. **Chunk Management**
-   - ❌ Chunk storage with user association
-   - ❌ Chunk metadata (source document, position, embeddings)
-   - ❌ Chunk update/delete operations
-
-6. **Private Corpus Retrieval**
-   - ❌ User-scoped retrieval from private documents
-   - ❌ Hybrid search for private docs
-   - ❌ Integration with existing RAG pipeline
-   - ❌ Combine public corpus + user private corpus
-
-7. **Document Permissions**
-   - ✅ RBAC already implemented (Solicitor/Admin can upload)
-   - ❌ Document-level permissions
-   - ❌ Share documents with other users/roles
-   - ❌ Document visibility controls
-
-8. **Document Management API**
-   - ✅ Upload endpoint (mock)
-   - ✅ List endpoint (mock)
-   - ❌ Get document by ID
-   - ❌ Update document metadata
-   - ❌ Delete document
-   - ❌ Re-process document
-   - ❌ Document search/filter
-
-**Estimated Time**: 2-3 days
-**Priority**: HIGH ⭐
-**Dependencies**: None (can start immediately)
-
----
-
-### Step 4: OAuth2 Integration (MEDIUM PRIORITY)
-
-**Current Status**: OAuth2 provider implementations exist but need testing
-
-**Features to Implement**:
+**Current Status**: OAuth2 providers and frontend OAuth are implemented; below are optional enhancements.
 
 1. **OAuth2 Flow Completion**
    - ✅ Google OAuth2 provider implemented
    - ✅ GitHub OAuth2 provider implemented
    - ✅ Microsoft OAuth2 provider implemented
-   - ❌ Frontend integration for OAuth login
-   - ❌ OAuth callback handling in UI
-   - ❌ Token storage in frontend
+   - ✅ Frontend integration for OAuth login (Phase 5.4)
+   - Optional: E2E OAuth testing, account linking UX
 
-2. **OAuth2 Testing**
-   - ❌ End-to-end OAuth2 flow testing
-   - ❌ Multiple provider testing
-   - ❌ Token refresh with OAuth providers
-   - ❌ Account linking (email + OAuth)
-
-**Estimated Time**: 1 day
-**Priority**: MEDIUM
-**Dependencies**: Frontend UI updates needed
+**Optional / Roadmap**
 
 ---
 
-### Step 5: User Management UI (MEDIUM PRIORITY)
+### Step 5: User Management UI (OPTIONAL)
 
-**Current Status**: API endpoints exist but no UI
+**Current Status**: API endpoints exist; document management UI exists for Solicitor/Admin (Phase 5.4). Below are optional enhancements.
 
-**Features to Implement**:
+1. **User Profile Management** (optional)
+   - User profile page, edit profile, change password UI, OAuth account linking UI
 
-1. **User Profile Management**
-   - ❌ User profile page
-   - ❌ Edit profile information
-   - ❌ Change password UI
-   - ❌ OAuth account linking UI
+2. **Admin Dashboard** (optional, Admin only)
+   - User list with filtering, role management, activation/deactivation, statistics
 
-2. **Admin Dashboard** (Admin only)
-   - ❌ User list with filtering
-   - ❌ User role management
-   - ❌ User activation/deactivation
-   - ❌ User statistics dashboard
+3. **Solicitor Dashboard** (partial; upload and list exist)
+   - Optional: Richer document search/filter, processing status UI
 
-3. **Solicitor Dashboard** (Solicitor/Admin)
-   - ❌ Document management UI
-   - ❌ Upload documents interface
-   - ❌ Document list with search/filter
-   - ❌ Document processing status
-
-**Estimated Time**: 2-3 days
-**Priority**: MEDIUM
-**Dependencies**: Streamlit frontend updates
+**Optional / Roadmap**
 
 ---
 
-### Step 6: Frontend Authentication Integration (HIGH PRIORITY)
+### Step 6: Frontend Authentication Integration - ✅ DONE (Phase 5.4)
 
-**Current Status**: Frontend doesn't use authentication yet
-
-**Features to Implement**:
-
-1. **Login/Register UI**
-   - ❌ Login form
-   - ❌ Registration form
-   - ❌ OAuth login buttons
-   - ❌ Token storage (localStorage/cookies)
-
-2. **Protected Routes in Frontend**
-   - ❌ Route guards for authenticated pages
-   - ❌ Token refresh handling
-   - ❌ Auto-logout on token expiration
-
-3. **User Context**
-   - ❌ User state management
-   - ❌ Role-based UI rendering
-   - ❌ User profile display
-
-**Estimated Time**: 1-2 days
-**Priority**: HIGH ⭐
-**Dependencies**: Streamlit authentication integration
+**Status**: Complete. Login/register, OAuth (Google, GitHub, Microsoft), protected routes, token refresh, role-based UI are implemented.
 
 ---
 
-### Step 7: Multi-Tenant Support (FUTURE)
+### Step 7: Multi-Tenant Support (OPTIONAL / ROADMAP)
 
 **Current Status**: Not implemented
 
@@ -187,44 +97,22 @@
 
 ---
 
-## 📋 Recommended Implementation Order
+## 📋 Optional / Roadmap Implementation Order
 
-### Immediate Next Steps (This Week):
+All core Phase 5 deliverables (5.1–5.4) are complete. Below is a **roadmap** for optional enhancements only.
 
-1. **Step 3: Document Upload System** ⭐
-   - Highest impact on user functionality
-   - Complements existing RAG system
-   - Can be built incrementally
+### Optional short-term:
+- **Step 5: User Management UI** — Admin/solicitor dashboards, profile UI
+- **Step 4: OAuth2 polish** — E2E OAuth testing, account linking UX
 
-2. **Step 6: Frontend Authentication Integration** ⭐
-   - Makes authentication usable
-   - Required for testing document upload
-   - Enables user-facing features
-
-### Short-term (Next 2 Weeks):
-
-3. **Step 5: User Management UI**
-   - Improves user experience
-   - Makes admin features accessible
-   - Enables document management
-
-4. **Step 4: OAuth2 Integration**
-   - Enhances user onboarding
-   - Improves security options
-   - Better user experience
-
-### Long-term (Future):
-
-5. **Step 7: Multi-Tenant Support**
-   - Enterprise feature
-   - Requires careful architecture
-   - Build after core features stable
+### Optional long-term:
+- **Step 7: Multi-Tenant Support** — Organisation/workspace model, tenant isolation
 
 ---
 
-## 🚀 Quick Start: Document Upload System
+## 📜 Historical: Quick Start for Document Upload (Phase 5.3 — Now Complete)
 
-If you want to proceed with the document upload system, here's a suggested breakdown:
+Reference only; document upload is implemented. Suggested breakdown (historical):
 
 ### Phase 5.3a: Database Models & Storage (2-3 hours)
 - Create Document and DocumentChunk models
@@ -259,28 +147,27 @@ If you want to proceed with the document upload system, here's a suggested break
 
 ---
 
-## 💡 Decision Points
+## 💡 Optional Next Focus (Roadmap Only)
 
-**What would you like to focus on next?**
+Core phases 5.1–5.4 are complete. Optional areas if extending further:
 
-1. **Document Upload System** - Full implementation
-2. **Frontend Authentication** - Make auth usable in UI
-3. **OAuth2 Testing** - Complete OAuth integration
-4. **User Management UI** - Admin and solicitor dashboards
-5. **Something else** - Let me know your priorities!
+1. **User Management UI** — Admin/solicitor dashboards, profile pages
+2. **OAuth2 polish** — E2E testing, account linking
+3. **Multi-tenant** — Organisation model, tenant isolation
+4. **Other** — Per project priorities
 
 ---
 
-## 📊 Progress Tracking
+## 📊 Progress Tracking (Updated)
 
 - ✅ Phase 5.1: Database setup - COMPLETE
 - ✅ Phase 5.2: Route protection - COMPLETE
-- ⏳ Phase 5.3: Document upload system - NEXT
-- ⏳ Phase 5.4: Frontend authentication - PENDING
-- ⏳ Phase 5.5: User management UI - PENDING
-- ⏳ Phase 5.6: OAuth2 completion - PENDING
+- ✅ Phase 5.3: Document upload system - **DONE**
+- ✅ Phase 5.4: Frontend authentication - **DONE**
+- 🔜 Phase 5.5: User management UI - Optional / roadmap
+- 🔜 Phase 5.6: OAuth2 completion - Optional / roadmap
 
 ---
 
-**Status**: Ready for next phase implementation! 🚀
+**Status**: Phases 5.1–5.4 complete. Document upload and frontend auth are DONE. Remaining items are optional or roadmap.
 

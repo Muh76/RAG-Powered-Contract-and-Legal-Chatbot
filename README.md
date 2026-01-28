@@ -1,6 +1,6 @@
 # Legal Chatbot - AI-Powered Legal Assistant
 
-A **production-ready** legal chatbot built with RAG (Retrieval-Augmented Generation) for UK legal system. This portfolio project demonstrates end-to-end AI/ML system development with **85-90% completion**, showcasing advanced RAG techniques, enterprise features, and production best practices.
+A **production-ready** legal chatbot built with RAG (Retrieval-Augmented Generation) for UK legal system. This portfolio project demonstrates end-to-end AI/ML system development. **Phases 1–5.4 are complete**, including document upload and frontend auth; remaining work is explicitly optional or roadmap.
 
 ## 🌟 Key Highlights
 
@@ -15,9 +15,9 @@ A **production-ready** legal chatbot built with RAG (Retrieval-Augmented Generat
 
 ## 🎯 Project Overview
 
-**A production-ready AI-powered legal assistant** demonstrating end-to-end development of enterprise-grade RAG systems with **85-90% completion**. This portfolio project showcases advanced AI/ML engineering, full-stack development, and production best practices.
+**A production-ready AI-powered legal assistant** demonstrating end-to-end development of enterprise-grade RAG systems. **Phases 1–5.4 are complete**; document upload and frontend auth are **DONE**.
 
-### 📊 Project Completion Status: **85-90%**
+### 📊 Project Completion Status: **Phases 1–5.4 Complete**
 
 **✅ Completed Phases:**
 - **Phase 1**: ✅ MVP chatbot with UK legal corpus (131K+ chunks from CUAD + UK Legislation) - **COMPLETE**
@@ -27,10 +27,10 @@ A **production-ready** legal chatbot built with RAG (Retrieval-Augmented Generat
 - **Phase 4.2**: ✅ Monitoring and observability (structured logging, health checks, metrics) - **COMPLETE**
 - **Phase 5.1**: ✅ Database setup & migrations (PostgreSQL, Alembic) - **COMPLETE**
 - **Phase 5.2**: ✅ Route protection with authentication & RBAC (JWT, OAuth2) - **COMPLETE**
-- **Phase 5.3**: ✅ Document upload system (PDF/DOCX parsing, private corpus) - **COMPLETE**
-- **Phase 5.4**: ✅ Frontend role-based UI with authentication (Streamlit) - **COMPLETE**
+- **Phase 5.3**: ✅ **Document upload system (DONE)** — PDF/DOCX/TXT parsing, private corpus, combined public+private retrieval - **COMPLETE**
+- **Phase 5.4**: ✅ **Frontend auth (DONE)** — Login/register, OAuth, protected routes, role-based UI - **COMPLETE**
 
-**🔄 Remaining Work (10-15%):**
+**🔜 Optional / Roadmap (not required for current completion):**
 - Multi-tenant architecture (enterprise feature)
 - Enhanced GDPR compliance features
 - Production deployment optimization
