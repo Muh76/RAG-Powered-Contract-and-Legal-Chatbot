@@ -45,6 +45,9 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Max chars for tool result in API response (document analyzer returns structured JSON; needs room for full output)
+MAX_TOOL_RESULT_LENGTH = 16000
+
 
 class AgenticRAGService:
     """
@@ -154,6 +157,7 @@ if the tool result contains actual legal text - use it verbatim or paraphrase it
 When you use tools:
 - Use search_legal_documents for general legal queries
 - Use get_specific_statute when the user mentions a specific Act or statute
+- Use analyze_document when the user provides or pastes document text to analyze (executive summary, key clauses, risk flags).
 - You can use multiple tools in sequence to gather comprehensive information
 - Always cite sources from tool results
 
@@ -176,6 +180,7 @@ if the tool result contains actual legal text - use it verbatim or paraphrase it
 When you use tools:
 - Use search_legal_documents for general legal queries
 - Use get_specific_statute when the user mentions a specific Act or statute
+- Use analyze_document when the user provides or pastes document text to analyze (executive summary, key clauses, risk flags).
 - You can use multiple tools in sequence to gather comprehensive information
 - Always cite sources from tool results
 
@@ -416,7 +421,7 @@ If the user's query is complex, break it down and use multiple tools to gather a
                                     # Match this result to the tool call by finding the most recent matching tool call
                                     for tc in tool_calls_from_messages:
                                         if tc["tool"] == tool_name and not tc.get("result"):
-                                            tc["result"] = tool_result[:3000]  # Increased limit to allow full section content
+                                            tc["result"] = tool_result[:MAX_TOOL_RESULT_LENGTH]
                                             break
                             
                             if result_messages:
@@ -496,7 +501,7 @@ If the user's query is complex, break it down and use multiple tools to gather a
                         tool_calls.append({
                             "tool": step.get("tool", "unknown"),
                             "input": step.get("input", {}),
-                            "result": step.get("result", "")[:3000] if "result" in step else ""  # Increased limit for full content
+                            "result": step.get("result", "")[:MAX_TOOL_RESULT_LENGTH] if "result" in step else ""
                         })
                     else:
                         # Fallback: try to extract from tuple format
@@ -508,7 +513,7 @@ If the user's query is complex, break it down and use multiple tools to gather a
                             tool_calls.append({
                                 "tool": tool_name,
                                 "input": tool_input,
-                                "result": str(tool_result)[:3000]  # Increased limit for full content
+                                "result": str(tool_result)[:MAX_TOOL_RESULT_LENGTH]
                             })
             else:
                 # Traditional agent format: list of (action, result) tuples
@@ -523,7 +528,7 @@ If the user's query is complex, break it down and use multiple tools to gather a
                         tool_calls.append({
                             "tool": tool_name,
                             "input": tool_input,
-                            "result": str(tool_result)[:3000]  # Increased limit to allow full section content
+                            "result": str(tool_result)[:MAX_TOOL_RESULT_LENGTH]
                         })
             
             # Track tool usage metrics
