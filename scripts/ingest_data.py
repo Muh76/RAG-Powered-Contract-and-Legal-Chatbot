@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 # Legal Chatbot - Data Ingestion Script
-# Run this to build FAISS index from legal documents
+# Run this to build or update FAISS index from legal documents.
+# Supports incremental ingestion: existing index is preserved; only new chunks are embedded and added.
 
 import os
 import sys
-import gc
+import logging
 import faiss
 import pickle
 import numpy as np
 from pathlib import Path
+from typing import Tuple, List, Optional
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -19,304 +21,279 @@ from ingestion.chunkers.document_chunker import ChunkingStrategy, ChunkingConfig
 from retrieval.embeddings.openai_embedding_generator import OpenAIEmbeddingGenerator, OpenAIEmbeddingConfig
 from app.core.config import settings
 
-def ingest_data():
-    """Ingest documents and create FAISS index"""
-    print("🚀 Starting data ingestion...")
+# Logging: clear ingestion steps (console + optional file)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("ingest_data")
+
+# Output paths (must match RAG service lookup order where applicable)
+DATA_DIR = project_root / "data"
+INDICES_DIR = project_root / "data" / "indices"
+FAISS_BIN_PATH = DATA_DIR / "faiss_index.bin"
+METADATA_PKL_PATH = DATA_DIR / "chunk_metadata.pkl"
+FAISS_COMBINED_PKL_PATH = INDICES_DIR / "faiss_index.pkl"
+
+
+def _log_step(step: str, detail: str) -> None:
+    """Log an ingestion step clearly."""
+    logger.info("[INGEST] %s — %s", step, detail)
+    print(f"   {step}: {detail}")
+
+
+def load_existing_index() -> Tuple[Optional[faiss.Index], List[dict]]:
+    """
+    Load existing FAISS index and chunk metadata if present.
+    Does not delete or modify any files. Returns (index, metadata_list) or (None, []).
+    Idempotent: safe to call when no index exists.
+    """
+    existing_metadata: List[dict] = []
+    existing_index: Optional[faiss.Index] = None
+
+    # Prefer combined pkl (same format we write for RAG)
+    if FAISS_COMBINED_PKL_PATH.exists():
+        try:
+            with open(FAISS_COMBINED_PKL_PATH, "rb") as f:
+                data = pickle.load(f)
+            existing_index = data.get("faiss_index")
+            existing_metadata = data.get("chunk_metadata") or []
+            if existing_index is not None:
+                _log_step("Load existing index", f"Loaded from {FAISS_COMBINED_PKL_PATH}: {existing_index.ntotal} vectors, {len(existing_metadata)} chunks")
+                return existing_index, existing_metadata
+        except Exception as e:
+            logger.warning("Could not load combined pkl %s: %s", FAISS_COMBINED_PKL_PATH, e)
+
+    # Fallback: separate .bin + .pkl
+    if FAISS_BIN_PATH.exists() and METADATA_PKL_PATH.exists():
+        try:
+            existing_index = faiss.read_index(str(FAISS_BIN_PATH))
+            with open(METADATA_PKL_PATH, "rb") as f:
+                existing_metadata = pickle.load(f)
+            if existing_metadata is None:
+                existing_metadata = []
+            _log_step("Load existing index", f"Loaded from {FAISS_BIN_PATH}: {existing_index.ntotal} vectors, {len(existing_metadata)} chunks")
+            return existing_index, existing_metadata
+        except Exception as e:
+            logger.warning("Could not load existing index from %s / %s: %s", FAISS_BIN_PATH, METADATA_PKL_PATH, e)
+
+    _log_step("Load existing index", "No existing index found; will create new index.")
+    return None, []
+
+
+def save_index_and_metadata(
+    index: faiss.Index,
+    chunk_metadata: List[dict],
+) -> None:
+    """Save FAISS index and metadata to disk. Overwrites only these files; does not delete other corpora."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    INDICES_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Save separate files (backward compatible)
+    faiss.write_index(index, str(FAISS_BIN_PATH))
+    _log_step("Save", f"Wrote FAISS index to {FAISS_BIN_PATH} ({index.ntotal} vectors)")
+
+    with open(METADATA_PKL_PATH, "wb") as f:
+        pickle.dump(chunk_metadata, f)
+    _log_step("Save", f"Wrote chunk metadata to {METADATA_PKL_PATH} ({len(chunk_metadata)} chunks)")
+
+    # Save combined pkl for RAG service (preferred path)
+    with open(FAISS_COMBINED_PKL_PATH, "wb") as f:
+        pickle.dump({"faiss_index": index, "chunk_metadata": chunk_metadata}, f)
+    _log_step("Save", f"Wrote combined index to {FAISS_COMBINED_PKL_PATH}")
+
+
+def chunk_to_metadata_item(chunk) -> dict:
+    """Build a single chunk metadata dict for storage."""
+    return {
+        "chunk_id": chunk.chunk_id,
+        "text": chunk.text,
+        "metadata": {
+            "title": chunk.metadata.title,
+            "source": chunk.metadata.source,
+            "jurisdiction": chunk.metadata.jurisdiction,
+            "document_type": chunk.metadata.document_type,
+            "section": getattr(chunk.metadata, "section", None),
+        },
+        "chunk_index": chunk.chunk_index,
+    }
+
+
+def ingest_data() -> None:
+    """
+    Ingest documents and create or update FAISS index.
+    - Existing embeddings are never deleted; new chunks are appended.
+    - Deduplication by chunk_id makes re-runs idempotent (no duplicate chunks).
+    - Logs each ingestion step clearly.
+    """
+    logger.info("Starting data ingestion (incremental; existing corpora preserved).")
     print("=" * 60)
-    
-    # PORTFOLIO MODE: Limit to subset for faster indexing and demo purposes
-    MAX_CHUNKS_TO_INDEX = 5000  # 5K chunks - very fast indexing for portfolio demo (~5-10 min indexing)
-    print(f"📊 PORTFOLIO MODE: Limiting to {MAX_CHUNKS_TO_INDEX:,} chunks for faster indexing")
-    print(f"   ✅ Perfect for demo - can expand later if needed")
-    print("")
-    
-    embedding_gen = None  # Initialize to None for cleanup
-    
+    print("Data ingestion — incremental mode")
+    print("=" * 60)
+
+    MAX_CHUNKS_TO_INDEX = 5000
+    _log_step("Config", f"Portfolio limit: {MAX_CHUNKS_TO_INDEX:,} chunks (UK legislation prioritised)")
+
+    existing_index, existing_metadata = load_existing_index()
+    existing_chunk_ids = {m.get("chunk_id") for m in existing_metadata if m.get("chunk_id")}
+    _log_step("Deduplication", f"Existing chunk IDs in index: {len(existing_chunk_ids):,}")
+
+    embedding_gen = None
     try:
         # 1. Load documents
+        _log_step("Load documents", "Scanning data/raw, data/uk_legislation, data/cuad/data")
         data_dir = project_root / "data" / "raw"
-        
         if not data_dir.exists():
-            print(f"❌ Data directory not found: {data_dir}")
-            print(f"   Creating directory and sample file...")
             data_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Create sample file
             sample_file = data_dir / "uk_legal_sample.txt"
-            with open(sample_file, "w") as f:
-                f.write("""
-Sale of Goods Act 1979
+            if not sample_file.exists():
+                with open(sample_file, "w") as f:
+                    f.write("Sale of Goods Act 1979\nSection 12 - Implied condition as to title.\n")
+                _log_step("Load documents", f"Created sample file: {sample_file}")
 
-Section 12 - Implied condition as to title
-
-In a contract of sale, unless the circumstances of the contract are such as to show a different intention, 
-there is an implied condition on the part of the seller that in the case of a sale he has a right to sell 
-the goods, and in the case of an agreement to sell he will have a right to sell the goods at the time 
-when the property is to pass.
-
-Section 13 - Sale by description
-
-Where there is a contract for the sale of goods by description, there is an implied condition that the 
-goods will correspond with the description.
-
-Section 14 - Implied terms about quality or fitness
-
-Except as provided by this section and section 15 below, there is no implied condition or warranty about 
-the quality or fitness for any particular purpose of goods supplied under a contract of sale.
-
-Employment Rights Act 1996
-
-Section 1 - Statement of initial employment particulars
-
-An employer shall give to an employee a written statement of particulars of employment.
-
-Section 2 - Statement of initial employment particulars
-
-The statement required by section 1 shall contain particulars of the names of the employer and employee.
-
-Data Protection Act 2018
-
-Section 1 - The data protection principles
-
-Personal data shall be processed lawfully, fairly and in a transparent manner.
-
-Section 2 - The data protection principles
-
-Personal data shall be collected for specified, explicit and legitimate purposes.
-""")
-            print(f"✅ Created sample file: {sample_file}")
-        
-        documents = []
-        
-        # Load .txt files from data/raw
+        documents: List = []
         for file_path in data_dir.glob("*.txt"):
-            print(f"📄 Loading: {file_path.name}")
             try:
                 loader = DocumentLoaderFactory.get_loader(str(file_path))
                 chunks = loader.load_documents(str(file_path))
                 documents.extend(chunks)
+                logger.info("Loaded %s: %d chunks", file_path.name, len(chunks))
             except Exception as e:
-                print(f"⚠️ Error loading {file_path.name}: {e}")
-        
-        # Load JSON files from data/uk_legislation
+                logger.warning("Error loading %s: %s", file_path.name, e)
+
         uk_legislation_dir = project_root / "data" / "uk_legislation"
         if uk_legislation_dir.exists():
-            print(f"\n📚 Loading UK Legislation files from {uk_legislation_dir}")
             for file_path in uk_legislation_dir.glob("*.json"):
-                print(f"📄 Loading: {file_path.name}")
                 try:
                     loader = DocumentLoaderFactory.get_loader(str(file_path))
                     chunks = loader.load_documents(str(file_path))
                     documents.extend(chunks)
-                    print(f"   ✅ Loaded {len(chunks)} chunks from {file_path.name}")
+                    logger.info("Loaded %s: %d chunks", file_path.name, len(chunks))
                 except Exception as e:
-                    print(f"⚠️ Error loading {file_path.name}: {e}")
-        else:
-            print(f"⚠️ UK legislation directory not found: {uk_legislation_dir}")
-        
-        # Load CUAD dataset (parquet files)
+                    logger.warning("Error loading %s: %s", file_path.name, e)
+
         cuad_dir = project_root / "data" / "cuad" / "data"
         if cuad_dir.exists():
-            print(f"\n📚 Loading CUAD dataset from {cuad_dir}")
-            parquet_files = list(cuad_dir.glob("*.parquet"))
-            
-            if parquet_files:
-                print(f"   Found {len(parquet_files)} parquet files")
-                for file_path in sorted(parquet_files):
-                    print(f"📄 Loading: {file_path.name}")
-                    try:
-                        loader = DocumentLoaderFactory.get_loader(str(file_path))
-                        chunks = loader.load_documents(str(file_path))
-                        documents.extend(chunks)
-                        print(f"   ✅ Loaded {len(chunks)} chunks from {file_path.name}")
-                    except Exception as e:
-                        print(f"   ⚠️ Error loading {file_path.name}: {e}")
-                        import traceback
-                        traceback.print_exc()
-            else:
-                print(f"   ⚠️ No parquet files found in {cuad_dir}")
-        else:
-            print(f"\n⚠️ CUAD directory not found: {cuad_dir}")
-        
-        print(f"✅ Loaded {len(documents)} documents")
-        
+            for file_path in sorted(cuad_dir.glob("*.parquet")):
+                try:
+                    loader = DocumentLoaderFactory.get_loader(str(file_path))
+                    chunks = loader.load_documents(str(file_path))
+                    documents.extend(chunks)
+                    logger.info("Loaded %s: %d chunks", file_path.name, len(chunks))
+                except Exception as e:
+                    logger.warning("Error loading %s: %s", file_path.name, e)
+
+        _log_step("Load documents", f"Total documents loaded: {len(documents):,}")
         if len(documents) == 0:
-            print("❌ No documents found! Add .txt files to data/raw/")
+            _log_step("Load documents", "No documents found. Add files to data/raw or data/uk_legislation.")
             return
-        
-        # 2. Chunk documents
+
+        # 2. Chunk
         chunker = ChunkingStrategy()
-        config = ChunkingConfig(
+        chunker.chunker.config = ChunkingConfig(
             chunk_size=600,
             overlap_size=100,
-            preserve_sentences=True
+            preserve_sentences=True,
         )
-        chunker.chunker.config = config
-        
-        all_chunks = []
+        all_chunks: List = []
         for doc in documents:
             chunks = chunker.chunk_document(doc, "sections")
             all_chunks.extend(chunks)
-        
-        total_chunks_created = len(all_chunks)
-        print(f"✅ Created {total_chunks_created:,} chunks")
-        
-        # PORTFOLIO MODE: Limit chunks to subset for faster indexing
-        if total_chunks_created > MAX_CHUNKS_TO_INDEX:
-            print(f"\n📊 Applying portfolio mode limit: {MAX_CHUNKS_TO_INDEX:,} chunks (from {total_chunks_created:,} total)")
-            
-            # Strategy: Prioritize UK legislation (important, small) + CUAD sample
-            # Separate chunks by source type
+        _log_step("Chunk", f"Created {len(all_chunks):,} chunks from {len(documents):,} documents")
+
+        # Portfolio limit: prioritise UK legislation
+        if len(all_chunks) > MAX_CHUNKS_TO_INDEX:
             uk_legislation_chunks = []
             cuad_chunks = []
             other_chunks = []
-            
             for chunk in all_chunks:
-                source = getattr(chunk.metadata, 'source', '').lower()
-                doc_type = getattr(chunk.metadata, 'document_type', '').lower()
-                
-                if 'legislation' in doc_type or 'act' in source or 'regulation' in source:
+                source = getattr(chunk.metadata, "source", "").lower()
+                doc_type = getattr(chunk.metadata, "document_type", "").lower()
+                if "legislation" in doc_type or "act" in source or "regulation" in source:
                     uk_legislation_chunks.append(chunk)
-                elif 'cuad' in chunk.chunk_id.lower() or 'contract' in source.lower():
+                elif "cuad" in chunk.chunk_id.lower() or "contract" in source.lower():
                     cuad_chunks.append(chunk)
                 else:
                     other_chunks.append(chunk)
-            
-            # Keep ALL UK legislation (small, important)
-            selected_chunks = uk_legislation_chunks.copy()
-            remaining_slots = MAX_CHUNKS_TO_INDEX - len(selected_chunks)
-            
-            print(f"   ✅ Keeping ALL {len(uk_legislation_chunks)} UK legislation chunks")
-            
-            # Fill remaining slots with CUAD chunks
-            if cuad_chunks and remaining_slots > 0:
-                cuad_to_add = min(remaining_slots, len(cuad_chunks))
-                selected_chunks.extend(cuad_chunks[:cuad_to_add])
-                remaining_slots -= cuad_to_add
-                print(f"   ✅ Adding {cuad_to_add:,} CUAD chunks (sample from {len(cuad_chunks):,} total)")
-            
-            # Add other chunks if space remains
-            if other_chunks and remaining_slots > 0:
-                other_to_add = min(remaining_slots, len(other_chunks))
-                selected_chunks.extend(other_chunks[:other_to_add])
-                print(f"   ✅ Adding {other_to_add:,} other chunks")
-            
-            all_chunks = selected_chunks
-            print(f"   📊 Final selection: {len(all_chunks):,} chunks (reduced from {total_chunks_created:,})")
-            print(f"   ⚡ This will significantly speed up indexing!")
-        else:
-            print(f"   ℹ️  Total chunks ({total_chunks_created:,}) is within limit - no reduction needed")
-        
-        print("")
-        
-        # 3. Generate embeddings using OpenAI API (NO PyTorch - eliminates segfaults!)
-        print("🧠 Generating embeddings using OpenAI API...")
-        print("   ✅ Using OpenAI embeddings (NO PyTorch - eliminates segfaults!)")
-        
-        # Get OpenAI API key
+            selected = uk_legislation_chunks.copy()
+            remaining = MAX_CHUNKS_TO_INDEX - len(selected)
+            if cuad_chunks and remaining > 0:
+                selected.extend(cuad_chunks[: min(remaining, len(cuad_chunks))])
+                remaining = MAX_CHUNKS_TO_INDEX - len(selected)
+            if other_chunks and remaining > 0:
+                selected.extend(other_chunks[: min(remaining, len(other_chunks))])
+            all_chunks = selected
+            _log_step("Chunk", f"Applied portfolio limit: {len(all_chunks):,} chunks selected")
+
+        # 3. Deduplicate: only index chunks not already in existing index (idempotency)
+        new_chunks = [c for c in all_chunks if c.chunk_id not in existing_chunk_ids]
+        _log_step("Deduplication", f"New chunks to index: {len(new_chunks):,} (skipping {len(all_chunks) - len(new_chunks):,} already in index)")
+
+        if len(new_chunks) == 0:
+            _log_step("Idempotency", "No new chunks to index. Exiting without overwriting existing index.")
+            print("Ingestion finished (no changes).")
+            return
+
+        # 4. Embed only new chunks
         api_key = os.getenv("OPENAI_API_KEY") or settings.OPENAI_API_KEY
         if not api_key:
-            raise ValueError(
-                "OPENAI_API_KEY not found! "
-                "Set it as environment variable: export OPENAI_API_KEY='your-key'"
-            )
-        
-        # Configure OpenAI embeddings with balanced rate limiting
-        # With subset approach (20K chunks), we can use moderate settings
+            raise ValueError("OPENAI_API_KEY not set. Set it in environment or .env.")
         embedding_config = OpenAIEmbeddingConfig(
             api_key=api_key,
-            model=settings.OPENAI_EMBEDDING_MODEL if hasattr(settings, 'OPENAI_EMBEDDING_MODEL') else "text-embedding-3-small",
-            dimension=None,  # Use model default (1536 for text-embedding-3-small)
-            batch_size=50,  # Moderate batch size
-            max_retries=5,  # Retries for network/SSL errors
-            timeout=60,  # Longer timeout
-            requests_per_minute=30  # Moderate rate: 30 requests/min = 2s delay between batches (faster than before)
+            model=getattr(settings, "OPENAI_EMBEDDING_MODEL", None) or "text-embedding-3-small",
+            dimension=None,
+            batch_size=50,
+            max_retries=5,
+            timeout=60,
+            requests_per_minute=30,
         )
-        
-        try:
-            embedding_gen = OpenAIEmbeddingGenerator(embedding_config)
-            chunk_texts = [chunk.text for chunk in all_chunks]
-            
-            total_chunks = len(chunk_texts)
-            estimated_batches = (total_chunks + embedding_config.batch_size - 1) // embedding_config.batch_size
-            estimated_minutes = (estimated_batches * 3) // 60  # 3s delay per batch
-            
-            print(f"   Generating embeddings for {total_chunks:,} chunks...")
-            print(f"   📊 Processing in batches of {embedding_config.batch_size} ({estimated_batches:,} batches)")
-            print(f"   ⏳ Estimated time: {estimated_minutes}-{estimated_minutes + 10} minutes (much faster with subset!)")
-            print(f"   💡 The script will automatically handle rate limits")
-            print("")
-            
-            # Generate embeddings with progress tracking
-            embeddings = embedding_gen.generate_embeddings_batch(chunk_texts)
-            
-            if embeddings and len(embeddings) > 0:
-                embedding_dim = len(embeddings[0])
-                print(f"✅ Generated {len(embeddings)} embeddings using OpenAI API")
-                print(f"   Embedding dimension: {embedding_dim}")
-                print(f"   ✅✅✅ NO PYTORCH - NO SEGFAULTS!")
-            else:
-                raise ValueError("Embedding generation returned empty results")
-                
-        except Exception as e:
-            print(f"❌ OpenAI embedding generation failed: {e}")
-            print("   Check your OPENAI_API_KEY and API access")
-            raise
-        
-        # 4. Create FAISS index
+        embedding_gen = OpenAIEmbeddingGenerator(embedding_config)
+        chunk_texts = [c.text for c in new_chunks]
+        _log_step("Embed", f"Generating embeddings for {len(chunk_texts):,} new chunks (OpenAI)")
+        embeddings = embedding_gen.generate_embeddings_batch(chunk_texts)
+        if not embeddings or len(embeddings) != len(new_chunks):
+            raise ValueError(f"Embedding count mismatch: got {len(embeddings) if embeddings else 0}, expected {len(new_chunks)}")
         dimension = len(embeddings[0])
-        index = faiss.IndexFlatIP(dimension)
-        
-        # Normalize embeddings
-        embeddings_np = np.array(embeddings)
-        norms = np.linalg.norm(embeddings_np, axis=1, keepdims=True)
-        normalized_embeddings = embeddings_np / norms
-        
-        index.add(normalized_embeddings.astype('float32'))
-        
-        # 5. Save index and metadata
-        output_dir = project_root / "data"
-        output_dir.mkdir(exist_ok=True)
-        
-        faiss_path = output_dir / "faiss_index.bin"
-        metadata_path = output_dir / "chunk_metadata.pkl"
-        
-        faiss.write_index(index, str(faiss_path))
-        
-        chunk_metadata = [
-            {
-                "chunk_id": chunk.chunk_id,
-                "text": chunk.text,
-                "metadata": {
-                    "title": chunk.metadata.title,
-                    "source": chunk.metadata.source,
-                    "jurisdiction": chunk.metadata.jurisdiction,
-                    "document_type": chunk.metadata.document_type,
-                    "section": getattr(chunk.metadata, 'section', None)
-                },
-                "chunk_index": chunk.chunk_index
-            }
-            for chunk in all_chunks
-        ]
-        
-        with open(metadata_path, "wb") as f:
-            pickle.dump(chunk_metadata, f)
-        
-        print(f"\n✅ Data ingestion complete!")
-        print(f"📁 Files created:")
-        print(f"   - FAISS index: {faiss_path}")
-        print(f"   - Metadata: {metadata_path}")
-        print(f"   - Total chunks: {len(chunk_metadata)}")
-        print(f"   - Embedding dimension: {dimension}")
-        
+        _log_step("Embed", f"Generated {len(embeddings)} embeddings (dim={dimension})")
+
+        # 5. Merge with existing index or create new one
+        if existing_index is not None:
+            if existing_index.d != dimension:
+                raise ValueError(
+                    f"Dimension mismatch: existing index has d={existing_index.d}, new embeddings have dim={dimension}. "
+                    "Use the same embedding model or re-run full ingestion."
+                )
+            embeddings_np = np.array(embeddings, dtype=np.float32)
+            norms = np.linalg.norm(embeddings_np, axis=1, keepdims=True)
+            norms[norms == 0] = 1.0
+            normalized = embeddings_np / norms
+            existing_index.add(normalized)
+            index = existing_index
+            new_metadata = [chunk_to_metadata_item(c) for c in new_chunks]
+            combined_metadata = existing_metadata + new_metadata
+            _log_step("Merge", f"Appended {len(new_chunks):,} vectors to existing index; total vectors: {index.ntotal}, total metadata: {len(combined_metadata):,}")
+        else:
+            index = faiss.IndexFlatIP(dimension)
+            embeddings_np = np.array(embeddings, dtype=np.float32)
+            norms = np.linalg.norm(embeddings_np, axis=1, keepdims=True)
+            norms[norms == 0] = 1.0
+            normalized = embeddings_np / norms
+            index.add(normalized)
+            combined_metadata = [chunk_to_metadata_item(c) for c in new_chunks]
+            _log_step("Merge", f"Created new index with {index.ntotal} vectors and {len(combined_metadata):,} metadata entries")
+
+        # 6. Save (overwrites only index/metadata files; does not delete other data)
+        save_index_and_metadata(index, combined_metadata)
+        logger.info("Ingestion complete. Total chunks in index: %s", len(combined_metadata))
+        print("Ingestion complete.")
+
+    except Exception as e:
+        logger.exception("Ingestion failed: %s", e)
+        raise
     finally:
-        # CRITICAL FIX: Skip cleanup to prevent PyTorch segfault
-        # The data is already saved, so cleanup is not critical
-        # PyTorch cleanup causes segfaults, so we just exit
-        # The OS will clean up memory when the process exits
-        pass
-        # Note: gc.collect() and del operations cause segfaults with PyTorch
-        # This is a known issue - the data is already saved, so it's safe to skip cleanup
+        pass  # No aggressive cleanup (avoids segfaults with some embedders)
+
 
 if __name__ == "__main__":
     ingest_data()
