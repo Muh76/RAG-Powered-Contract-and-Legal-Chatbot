@@ -251,20 +251,30 @@ class LegalChatbotUI:
         # Display user profile
         self.auth_ui.render_user_profile()
         
-        # Navigation
+        # Navigation (Admin: list + role; Solicitor/Admin: documents)
         st.sidebar.markdown("---")
         st.sidebar.subheader("🧭 Navigation")
-        
-        page = st.sidebar.radio(
-            "Page",
-            ["💬 Chat", "📄 Documents", "⚙️ Settings"],
-            index=0 if self.session_state.current_page == "chat" else 1 if self.session_state.current_page == "documents" else 2
-        )
-        
+        nav_options = ["💬 Chat", "⚙️ Settings"]
+        if self.auth_ui.has_role("solicitor", "admin"):
+            nav_options.insert(1, "📄 Documents")
+        if self.auth_ui.has_role("admin"):
+            nav_options.insert(len(nav_options) - 1, "👥 Admin")
+        page_index = 0
+        if self.session_state.current_page == "chat":
+            page_index = 0
+        elif self.session_state.current_page == "documents":
+            page_index = nav_options.index("📄 Documents") if "📄 Documents" in nav_options else 0
+        elif self.session_state.current_page == "admin":
+            page_index = nav_options.index("👥 Admin") if "👥 Admin" in nav_options else 0
+        else:
+            page_index = nav_options.index("⚙️ Settings")
+        page = st.sidebar.radio("Page", nav_options, index=page_index)
         if page == "💬 Chat":
             self.session_state.current_page = "chat"
         elif page == "📄 Documents":
             self.session_state.current_page = "documents"
+        elif page == "👥 Admin":
+            self.session_state.current_page = "admin"
         elif page == "⚙️ Settings":
             self.session_state.current_page = "settings"
         
@@ -335,6 +345,8 @@ class LegalChatbotUI:
             self._render_chat_interface(mode or "public", top_k or 3)
         elif page == "documents":
             self._render_documents_interface()
+        elif page == "admin":
+            self._render_admin_interface()
         elif page == "settings":
             self._render_settings_interface()
         else:
@@ -443,7 +455,10 @@ class LegalChatbotUI:
                 
                 if documents:
                     for doc in documents:
-                        with st.expander(f"📄 {doc.get('title') or doc.get('original_filename', 'Untitled')} - {doc.get('status', 'unknown')}"):
+                        doc_id = doc.get("id")
+                        title = doc.get("title") or doc.get("original_filename", "Untitled")
+                        status = doc.get("status", "unknown")
+                        with st.expander(f"📄 {title} — {status}"):
                             col1, col2 = st.columns(2)
                             with col1:
                                 st.write(f"**Type:** {doc.get('file_type', 'N/A')}")
@@ -452,11 +467,42 @@ class LegalChatbotUI:
                             with col2:
                                 st.write(f"**Jurisdiction:** {doc.get('jurisdiction', 'N/A')}")
                                 st.write(f"**Created:** {doc.get('created_at', 'N/A')}")
-                                if doc.get('tags'):
+                                if doc.get("tags"):
                                     st.write(f"**Tags:** {doc.get('tags')}")
-                            
-                            if doc.get('description'):
+                            if doc.get("description"):
                                 st.write(f"**Description:** {doc.get('description')}")
+                            st.markdown("---")
+                            btn_col1, btn_col2, _ = st.columns([1, 1, 3])
+                            with btn_col1:
+                                if st.button("🔄 Reprocess", key=f"reprocess_{doc_id}", use_container_width=True):
+                                    try:
+                                        r = requests.post(
+                                            f"{self.api_base_url}/api/v1/documents/{doc_id}/reprocess",
+                                            headers=headers,
+                                            timeout=120,
+                                        )
+                                        if r.status_code == 200:
+                                            st.success("Reprocessing started.")
+                                            st.rerun()
+                                        else:
+                                            st.error(r.json().get("detail", r.text))
+                                    except Exception as e:
+                                        st.error(str(e))
+                            with btn_col2:
+                                if st.button("🗑️ Delete", key=f"delete_{doc_id}", use_container_width=True):
+                                    try:
+                                        r = requests.delete(
+                                            f"{self.api_base_url}/api/v1/documents/{doc_id}",
+                                            headers=headers,
+                                            timeout=10,
+                                        )
+                                        if r.status_code == 204 or r.status_code == 200:
+                                            st.success("Document deleted.")
+                                            st.rerun()
+                                        else:
+                                            st.error(r.json().get("detail", r.text))
+                                    except Exception as e:
+                                        st.error(str(e))
                 else:
                     st.info("No documents uploaded yet. Use the upload button to add documents.")
             else:
@@ -506,7 +552,88 @@ class LegalChatbotUI:
                         st.error(f"Upload failed: {response.json().get('detail', 'Unknown error')}")
                 except Exception as e:
                     st.error(f"Upload error: {str(e)}")
-    
+
+    def _render_admin_interface(self):
+        """Render Admin UI: list users, view roles, change role (existing API)."""
+        if not require_role("admin"):
+            st.warning("⚠️ Admin page is only available for Admin users.")
+            return
+        st.title("👥 Admin — Users")
+        try:
+            headers = self.auth_ui.get_auth_headers()
+            response = requests.get(
+                f"{self.api_base_url}/api/v1/auth/users",
+                headers=headers,
+                params={"skip": 0, "limit": 200},
+                timeout=10
+            )
+            if response.status_code != 200:
+                st.error(f"Failed to load users: {response.text}")
+                return
+            data = response.json()
+            users = data.get("users", [])
+            total = data.get("total", 0)
+            st.caption(f"Total users: {total}")
+            if not users:
+                st.info("No users found.")
+                return
+            role_options = ["public", "solicitor", "admin"]
+            # Header row
+            h1, h2, h3, h4, h5 = st.columns([2, 1.5, 1, 0.8, 1.2])
+            with h1:
+                st.markdown("**Email**")
+            with h2:
+                st.markdown("**Full name**")
+            with h3:
+                st.markdown("**Role**")
+            with h4:
+                st.markdown("**Active**")
+            with h5:
+                st.markdown("**Change role**")
+            st.divider()
+            for u in users:
+                uid = u.get("id")
+                email = u.get("email", "")
+                full_name = u.get("full_name") or ""
+                role = u.get("role", "public")
+                is_active = u.get("is_active", True)
+                with st.container():
+                    c1, c2, c3, c4, c5 = st.columns([2, 1.5, 1, 0.8, 1.2])
+                    with c1:
+                        st.text(email)
+                    with c2:
+                        st.text(full_name or "—")
+                    with c3:
+                        st.text(role)
+                    with c4:
+                        st.text("Active" if is_active else "Inactive")
+                    with c5:
+                        with st.form(key=f"admin_role_form_{uid}"):
+                            new_role = st.selectbox(
+                                "Role",
+                                role_options,
+                                index=role_options.index(role) if role in role_options else 0,
+                                key=f"admin_role_select_{uid}"
+                            )
+                            if st.form_submit_button("Update"):
+                                try:
+                                    r = requests.put(
+                                        f"{self.api_base_url}/api/v1/auth/users/{uid}",
+                                        headers=headers,
+                                        json={"role": new_role},
+                                        timeout=10
+                                    )
+                                    if r.status_code == 200:
+                                        st.success("Role updated.")
+                                        st.rerun()
+                                    else:
+                                        st.error(r.json().get("detail", r.text))
+                                except Exception as e:
+                                    st.error(str(e))
+                    st.divider()
+        except Exception as e:
+            st.error(f"Error loading users: {str(e)}")
+
     def _render_settings_interface(self):
         """Render user settings interface"""
         st.title("⚙️ Settings")
