@@ -75,8 +75,13 @@ def init_chat_services():
 
 
 def get_rag_service():
-    """Get RAG service (must be initialized at startup via init_chat_services())."""
+    """Pure getter: return RAG singleton. Must NEVER initialize RAGService here (only at startup)."""
     if rag_service is None:
+        logger.critical(
+            "RAG service is None when get_rag_service() was called. "
+            "RAGService must be initialized at startup via init_chat_services(); "
+            "initialization must NEVER happen inside /api/v1/chat or any request path."
+        )
         raise HTTPException(
             status_code=503,
             detail="RAG service is not available. Application may not have started correctly.",
@@ -85,8 +90,13 @@ def get_rag_service():
 
 
 def get_guardrails_service():
-    """Get Guardrails service (must be initialized at startup via init_chat_services())."""
+    """Pure getter: return Guardrails singleton. Must NEVER initialize GuardrailsService here (only at startup)."""
     if guardrails_service is None:
+        logger.critical(
+            "Guardrails service is None when get_guardrails_service() was called. "
+            "GuardrailsService must be initialized at startup via init_chat_services(); "
+            "initialization must NEVER happen inside /api/v1/chat or any request path."
+        )
         raise HTTPException(
             status_code=500,
             detail="Guardrails service is not available. Application may not have started correctly.",
