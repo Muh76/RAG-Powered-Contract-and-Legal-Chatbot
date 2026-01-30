@@ -349,6 +349,13 @@ class RAGService:
                     self.chunk_metadata = data.get('chunk_metadata', [])
                 if self.faiss_index:
                     logger.info(f"✅ Loaded FAISS index from {pkl_path}: {self.faiss_index.ntotal} vectors, {len(self.chunk_metadata)} chunks")
+                    # TEMPORARY DEBUG: ingestion vs runtime embedding dimension
+                    faiss_d = getattr(self.faiss_index, "d", None)
+                    runtime_dim = getattr(settings, "EMBEDDING_DIMENSION", None)
+                    logger.info(
+                        "[DEBUG] FAISS index dimension (ingestion): faiss_index.d=%s | runtime embedding dimension (settings.EMBEDDING_DIMENSION): %s | match=%s",
+                        faiss_d, runtime_dim, faiss_d == runtime_dim,
+                    )
                 else:
                     logger.warning(f"⚠️  FAISS index is None in {pkl_path}")
                     self.faiss_index = None
@@ -365,6 +372,13 @@ class RAGService:
                     with open(metadata_path, "rb") as f:
                         self.chunk_metadata = pickle.load(f)
                     logger.info(f"✅ Loaded FAISS index with {self.faiss_index.ntotal} vectors from {faiss_path}")
+                    # TEMPORARY DEBUG: ingestion vs runtime embedding dimension
+                    faiss_d = getattr(self.faiss_index, "d", None)
+                    runtime_dim = getattr(settings, "EMBEDDING_DIMENSION", None)
+                    logger.info(
+                        "[DEBUG] FAISS index dimension (ingestion): faiss_index.d=%s | runtime embedding dimension (settings.EMBEDDING_DIMENSION): %s | match=%s",
+                        faiss_d, runtime_dim, faiss_d == runtime_dim,
+                    )
                 except Exception as e:
                     logger.error(f"❌ Error loading vector store: {e}")
                     self.faiss_index = None
@@ -376,9 +390,25 @@ class RAGService:
         else:
             logger.warning("FAISS index not found. Run data ingestion first.")
             logger.warning(f"Looked in: {[str(p) for p in possible_paths]}")
-            logger.error("To fix: Run 'python scripts/ingest_data.py' to create the FAISS index")
             self.faiss_index = None
-            self.chunk_metadata = []
+            # Reversible fallback: load standalone chunk_metadata.pkl for TF-IDF-only search
+            metadata_only_paths = [
+                project_root / "data" / "chunk_metadata.pkl",
+                project_root / "data" / "indices" / "chunk_metadata.pkl",
+                Path("data/chunk_metadata.pkl"),
+            ]
+            for mp in metadata_only_paths:
+                if mp.exists():
+                    try:
+                        with open(mp, "rb") as f:
+                            self.chunk_metadata = pickle.load(f)
+                        logger.info("✅ Loaded chunk metadata only from %s (%s chunks); TF-IDF search available", mp, len(self.chunk_metadata))
+                        break
+                    except Exception as e:
+                        logger.warning("Could not load %s: %s", mp, e)
+            else:
+                logger.error("To fix: Run 'python scripts/ingest_data.py' to create the FAISS index")
+                self.chunk_metadata = []
     
     def search(
         self,
@@ -413,30 +443,37 @@ class RAGService:
         """
         logger.info(f"🔍 Starting search for query: '{query[:50]}...' (top_k={top_k})")
         
-        # Check service state
-        if self.faiss_index is None:
-            logger.error("❌ FAISS index is None - search cannot proceed")
-            return []
+        # Check service state: need at least chunk_metadata for any search
         if len(self.chunk_metadata) == 0:
             logger.error("❌ No chunk metadata available - search cannot proceed")
             return []
+        if self.faiss_index is not None:
+            logger.info(f"📊 Service state: FAISS index has {self.faiss_index.ntotal} vectors, {len(self.chunk_metadata)} chunks")
         
-        logger.info(f"📊 Service state: FAISS index has {self.faiss_index.ntotal} vectors, {len(self.chunk_metadata)} chunks")
-        
-        # Use hybrid search if available (BM25 + TF-IDF, NO PyTorch!)
-        # Otherwise fall back to TF-IDF search
+        # When FAISS is missing but metadata exists: TF-IDF only (reversible fallback for Sale of Goods etc.)
         use_hybrid_search = use_hybrid if use_hybrid is not None else self.use_hybrid
+        if self.faiss_index is None:
+            use_hybrid_search = False
+            logger.info("📊 No FAISS index; using TF-IDF-only search over %s chunks", len(self.chunk_metadata))
         
         if use_hybrid_search and self.hybrid_retriever:
             # Check if we have true hybrid (BM25 + Embeddings) or degraded (BM25 + TF-IDF)
             semantic_ret = self.hybrid_retriever.semantic_retriever if self.hybrid_retriever else None
             is_true_hybrid = semantic_ret and hasattr(semantic_ret, 'embedding_gen') and semantic_ret.embedding_gen
+            retriever_type = "hybrid (BM25+embeddings)" if is_true_hybrid else "hybrid (BM25+TF-IDF)"
             if is_true_hybrid:
                 logger.info("🔀 Using TRUE HYBRID search (BM25 + Embeddings, NO PyTorch!)")
             else:
                 logger.info("🔀 Using hybrid search (BM25 + TF-IDF, keyword-based)")
             public_results = self._hybrid_search(query, top_k, fusion_strategy, metadata_filter)
         else:
+            has_emb = (
+                self.embedding_gen is not None
+                and hasattr(self.embedding_gen, "model")
+                and self.embedding_gen.model is not None
+                and self.faiss_index is not None
+            )
+            retriever_type = "FAISS" if has_emb else "TF-IDF"
             logger.info("🔎 Using TF-IDF search")
             public_results = self._semantic_search(query, top_k)
         
@@ -449,6 +486,11 @@ class RAGService:
         else:
             combined_results = public_results
         
+        # TEMPORARY DEBUG: retriever type and counts before/after (private) fusion
+        logger.info(
+            "[DEBUG] retriever_type=%s | chunks_before_fusion(public)=%s | chunks_after_fusion(combined)=%s",
+            retriever_type, len(public_results), len(combined_results),
+        )
         logger.info(f"✅ Final search returned {len(combined_results)} results")
         
         # Add explainability if requested

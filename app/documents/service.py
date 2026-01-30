@@ -18,15 +18,21 @@ from app.core.errors import NotFoundError, AuthenticationError
 
 logger = logging.getLogger(__name__)
 
-# Import embedding generator with error handling
-try:
-    from retrieval.embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
-    EMBEDDING_GENERATOR_AVAILABLE = True
-except (ImportError, Exception) as e:
-    logger.warning(f"EmbeddingGenerator not available: {e}. Documents will be stored without embeddings.")
+# Only import local (SentenceTransformer/PyTorch) embedding generator when local embeddings are enabled.
+# When DISABLE_LOCAL_EMBEDDINGS=true (default in dev), we never import embedding_generator so /api/v1/chat never loads PyTorch.
+if not getattr(settings, "DISABLE_LOCAL_EMBEDDINGS", True):
+    try:
+        from retrieval.embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
+        EMBEDDING_GENERATOR_AVAILABLE = True
+    except (ImportError, Exception) as e:
+        logger.warning(f"EmbeddingGenerator not available: {e}. Documents will be stored without embeddings.")
+        EmbeddingGenerator = None
+        EmbeddingConfig = None
+        EMBEDDING_GENERATOR_AVAILABLE = False
+else:
+    EMBEDDING_GENERATOR_AVAILABLE = False
     EmbeddingGenerator = None
     EmbeddingConfig = None
-    EMBEDDING_GENERATOR_AVAILABLE = False
 
 
 class DocumentService:
@@ -43,9 +49,34 @@ class DocumentService:
             preserve_sentences=True
         ))
         
-        # Initialize embedding generator (with defensive error handling)
+        # Initialize embedding generator. When DISABLE_LOCAL_EMBEDDINGS=true (default in dev), use OpenAI only so
+        # SentenceTransformer/PyTorch is never loaded on /api/v1/chat.
         self.embedding_gen = None
-        if EMBEDDING_GENERATOR_AVAILABLE and EmbeddingGenerator and EmbeddingConfig:
+        if settings.DISABLE_LOCAL_EMBEDDINGS:
+            # Use OpenAI embeddings only (no SentenceTransformer/PyTorch on chat path)
+            if settings.OPENAI_API_KEY:
+                try:
+                    from retrieval.embeddings.openai_embedding_generator import (
+                        OpenAIEmbeddingGenerator,
+                        OpenAIEmbeddingConfig,
+                    )
+                    config = OpenAIEmbeddingConfig(
+                        api_key=settings.OPENAI_API_KEY,
+                        model=settings.OPENAI_EMBEDDING_MODEL,
+                        dimension=settings.EMBEDDING_DIMENSION,
+                        batch_size=settings.EMBEDDING_BATCH_SIZE,
+                    )
+                    self.embedding_gen = OpenAIEmbeddingGenerator(config)
+                    if self.embedding_gen.model is None:
+                        self.embedding_gen = None
+                    else:
+                        logger.info("Using OpenAI embeddings for document search (DISABLE_LOCAL_EMBEDDINGS=true)")
+                except Exception as e:
+                    logger.warning(f"Failed to initialize OpenAI embedding generator: {e}")
+                    self.embedding_gen = None
+            else:
+                logger.info("DISABLE_LOCAL_EMBEDDINGS=true and no OPENAI_API_KEY - private corpus search disabled")
+        elif EMBEDDING_GENERATOR_AVAILABLE and EmbeddingGenerator and EmbeddingConfig:
             try:
                 embedding_config = EmbeddingConfig(
                     model_name=settings.EMBEDDING_MODEL,

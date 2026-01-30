@@ -71,6 +71,11 @@ class EmbeddingGenerator:
     
     def _load_model(self):
         """Load the embedding model"""
+        # CRITICAL: Never load PyTorch/SentenceTransformer when DISABLE_LOCAL_EMBEDDINGS is set (e.g. /api/v1/chat path)
+        if os.getenv("DISABLE_LOCAL_EMBEDDINGS", "").lower() in ("1", "true", "yes"):
+            logger.info("Local embeddings disabled via DISABLE_LOCAL_EMBEDDINGS - not loading SentenceTransformer")
+            self.model = None
+            return
         # CRITICAL: Check PyTorch before trying to import sentence-transformers
         if not _check_pytorch_available():
             error_msg = (

@@ -51,6 +51,10 @@ class OpenAIEmbeddingGenerator:
         # Return a dummy object that indicates model is available
         return self if self.config.api_key else None
     
+    def get_embedding_dimension(self) -> int:
+        """Return embedding dimension for compatibility with DocumentService and search."""
+        return self.config.dimension or 1536
+    
     def generate_embedding(self, text: str) -> List[float]:
         """Generate embedding for a single text using OpenAI API"""
         if not text or not text.strip():

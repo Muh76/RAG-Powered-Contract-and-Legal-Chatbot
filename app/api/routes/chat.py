@@ -45,6 +45,11 @@ llm_service = None
 def init_chat_services():
     """Initialize RAG and Guardrails services once at application startup. Called from lifespan."""
     global rag_service, guardrails_service
+    logger.info(
+        "Local embeddings: %s (DISABLE_LOCAL_EMBEDDINGS=%s)",
+        "disabled" if getattr(settings, "DISABLE_LOCAL_EMBEDDINGS", True) else "enabled",
+        getattr(settings, "DISABLE_LOCAL_EMBEDDINGS", True),
+    )
     logger.info("🔄 Initializing RAGService...")
     try:
         rag_service = RAGService()
@@ -287,6 +292,19 @@ async def chat(
                 raise HTTPException(status_code=503, detail=f"RAG service error: {str(e)}. Please try again later.")
         except HTTPException:
             raise
+        
+        # Log which embedding path this request will use (no SentenceTransformer on chat path when DISABLE_LOCAL_EMBEDDINGS=true)
+        main_rag_mode = "hybrid (BM25+TF-IDF)" if (rag.hybrid_retriever is not None) else "TF-IDF"
+        if not include_private_corpus:
+            private_corpus_mode = "not used"
+        elif getattr(settings, "DISABLE_LOCAL_EMBEDDINGS", True):
+            private_corpus_mode = "OpenAI" if (getattr(settings, "OPENAI_API_KEY", None) and settings.OPENAI_API_KEY) else "disabled (no OpenAI key)"
+        else:
+            private_corpus_mode = "local (SentenceTransformer)"
+        logger.info(
+            "CHAT_STAGE request_id=%s stage=embedding_mode main_rag=%s private_corpus=%s",
+            request_id, main_rag_mode, private_corpus_mode,
+        )
         
         # Search user's private documents if enabled
         private_corpus_results = None

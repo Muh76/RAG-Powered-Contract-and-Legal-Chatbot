@@ -42,7 +42,9 @@ class Settings(BaseSettings):
     # Embedding Configuration
     # Primary: Use OpenAI embeddings (no PyTorch required - eliminates segfaults!)
     USE_OPENAI_EMBEDDINGS: bool = True  # Set to False to use sentence-transformers (PyTorch)
-    EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"  # Fallback if OpenAI not available
+    # Disable local (SentenceTransformer/PyTorch) embeddings in chat path; use OpenAI or TF-IDF fallback. Default True in dev to avoid segfaults.
+    DISABLE_LOCAL_EMBEDDINGS: bool = True
+    EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"  # Fallback when DISABLE_LOCAL_EMBEDDINGS=False
     EMBEDDING_DIMENSION: int = 1536  # text-embedding-3-small default (1536D), or 384 for all-MiniLM-L6-v2
     EMBEDDING_BATCH_SIZE: int = 32
     
