@@ -60,10 +60,13 @@ def serialize_log(record: Dict[str, Any]) -> str:
             elif isinstance(extra_data, dict):
                 log_data.update(extra_data)
         
-        return json.dumps(log_data, default=str)
+        out = json.dumps(log_data, default=str)
+        # Loguru treats callable format return values as templates and runs format_map(record).
+        # JSON braces { } must be escaped ({{ }}) to avoid KeyError; output stays valid JSON.
+        return out.replace("{", "{{").replace("}", "}}")
     except Exception as e:
-        # Fallback to simple string if serialization fails
-        return json.dumps({"message": str(record.get("message", "Unknown")), "error": str(e)})
+        fallback = json.dumps({"message": str(record.get("message", "Unknown")), "error": str(e)})
+        return fallback.replace("{", "{{").replace("}", "}}")
 
 
 def setup_logging():
