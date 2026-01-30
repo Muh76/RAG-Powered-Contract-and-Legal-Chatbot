@@ -122,47 +122,36 @@ def _create_degraded_rag_service():
     rag_service.hybrid_retriever = None
     rag_service.explainability_analyzer = None
     
-    # Try to load FAISS index without embeddings (safer)
+    # Try to load FAISS index and metadata from data/ (same paths as RAGService)
     try:
         from pathlib import Path
         import pickle
         import faiss
-        
-        # Try multiple paths
-        faiss_paths = [
-            Path("data/faiss_index.bin"),
-            Path("data/indices/faiss_index.pkl"),
-            Path("notebooks/phase1/data/faiss_index.bin")
-        ]
-        
-        for faiss_path in faiss_paths:
-            if not faiss_path.exists():
-                continue
-                
+
+        base = Path(__file__).resolve().parent.parent.parent.parent
+        faiss_path = base / "data" / "faiss_index.bin"
+        metadata_path = base / "data" / "chunk_metadata.pkl"
+
+        if faiss_path.exists() and metadata_path.exists():
             try:
-                if faiss_path.suffix == '.pkl':
-                    # Combined file
-                    with open(faiss_path, 'rb') as f:
-                        data = pickle.load(f)
-                        rag_service.faiss_index = data.get('faiss_index')
-                        rag_service.chunk_metadata = data.get('chunk_metadata', [])
-                else:
-                    # Separate files
-                    metadata_path = faiss_path.parent / "chunk_metadata.pkl"
-                    if metadata_path.exists():
-                        rag_service.faiss_index = faiss.read_index(str(faiss_path))
-                        with open(metadata_path, 'rb') as f:
-                            rag_service.chunk_metadata = pickle.load(f)
-                
-                if rag_service.faiss_index:
-                    logger.info(f"✅ Loaded FAISS index with {len(rag_service.chunk_metadata)} chunks (no embeddings)")
-                    break
+                rag_service.faiss_index = faiss.read_index(str(faiss_path))
+                with open(metadata_path, "rb") as f:
+                    rag_service.chunk_metadata = pickle.load(f)
+                ntotal = getattr(rag_service.faiss_index, "ntotal", 0)
+                n_chunks = len(rag_service.chunk_metadata) if rag_service.chunk_metadata else 0
+                logger.info("FAISS loaded (degraded): ntotal=%s | chunks_loaded=%s", ntotal, n_chunks)
             except Exception as e:
-                logger.warning(f"Could not load FAISS from {faiss_path}: {e}")
-                continue
-                
+                logger.warning("Could not load FAISS from data/: %s", e)
+        elif metadata_path.exists():
+            try:
+                with open(metadata_path, "rb") as f:
+                    rag_service.chunk_metadata = pickle.load(f)
+                n_chunks = len(rag_service.chunk_metadata) if rag_service.chunk_metadata else 0
+                logger.info("Metadata-only loaded (degraded): FAISS ntotal=N/A | chunks_loaded=%s", n_chunks)
+            except Exception as e:
+                logger.warning("Could not load data/chunk_metadata.pkl: %s", e)
     except Exception as load_error:
-        logger.warning(f"Could not load FAISS index: {load_error}")
+        logger.warning("Could not load FAISS index: %s", load_error)
     
     return rag_service
 

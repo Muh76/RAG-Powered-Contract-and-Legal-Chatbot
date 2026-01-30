@@ -71,16 +71,19 @@ class RAGService:
             # Continue anyway - can use TF-IDF fallback
         
         # Step 2: Initialize embedding generator (for semantic search in hybrid mode)
-        # Try to initialize embeddings - if it fails, fall back to TF-IDF only
-        # Use lazy initialization to prevent segfaults at startup
+        # When DISABLE_LOCAL_EMBEDDINGS=True and OpenAI API key present: use OpenAI + FAISS for semantic retrieval
         try:
-            # Check if embeddings are explicitly disabled
             disable_embeddings = os.getenv("DISABLE_EMBEDDINGS", "").lower() in ("1", "true", "yes")
-            if disable_embeddings:
+            use_openai_for_semantic = (
+                getattr(settings, "DISABLE_LOCAL_EMBEDDINGS", True) and settings.OPENAI_API_KEY
+            )
+            if disable_embeddings and not use_openai_for_semantic:
                 logger.info("⚠️ Embeddings disabled via DISABLE_EMBEDDINGS environment variable")
                 logger.info("✅ System will use TF-IDF keyword search only")
                 self.embedding_gen = None
-            else:
+            elif use_openai_for_semantic:
+                logger.info("Semantic retriever: OpenAI + FAISS (DISABLE_LOCAL_EMBEDDINGS=True, API key present)")
+            if not (disable_embeddings and not use_openai_for_semantic):
                 # CRITICAL: Initialize embeddings IMMEDIATELY for TRUE hybrid search (BM25 + Embeddings)
                 # Use OpenAI embeddings (NO PyTorch - eliminates segfaults completely!)
                 logger.info("🚀 Initializing OpenAI embedding generator for BM25 + Embeddings hybrid search...")
@@ -125,36 +128,40 @@ class RAGService:
                             self.embedding_gen = None
                             
                 except ImportError:
-                    # Fallback to PyTorch if OpenAI generator not available
-                    logger.warning("⚠️ OpenAI embedding generator not available, trying PyTorch...")
-                    try:
-                        from retrieval.embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
-                        from retrieval.embeddings.embedding_generator import _check_pytorch_available
-                        
-                        if not _check_pytorch_available():
-                            logger.error("❌ PyTorch is not available")
+                    if use_openai_for_semantic:
+                        logger.warning("⚠️ OpenAI embedding generator not available; TF-IDF fallback (no PyTorch when DISABLE_LOCAL_EMBEDDINGS=True)")
+                        self.embedding_gen = None
+                    else:
+                        # Fallback to PyTorch if OpenAI generator not available
+                        logger.warning("⚠️ OpenAI embedding generator not available, trying PyTorch...")
+                        try:
+                            from retrieval.embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
+                            from retrieval.embeddings.embedding_generator import _check_pytorch_available
+                            
+                            if not _check_pytorch_available():
+                                logger.error("❌ PyTorch is not available")
+                                logger.warning("⚠️ Falling back to TF-IDF (not true hybrid)")
+                                self.embedding_gen = None
+                            else:
+                                logger.info("✅ PyTorch check passed, initializing embeddings...")
+                                embedding_config = EmbeddingConfig(
+                                    model_name=settings.EMBEDDING_MODEL,
+                                    dimension=settings.EMBEDDING_DIMENSION
+                                )
+                                self.embedding_gen = EmbeddingGenerator(embedding_config)
+                                
+                                if self.embedding_gen.model is not None:
+                                    logger.info("✅✅✅ Embedding generator initialized (PyTorch fallback)")
+                                    test_emb = self.embedding_gen.generate_embedding("test")
+                                    if test_emb and len(test_emb) > 0:
+                                        logger.info(f"✅ Embedding verified: {len(test_emb)} dimensions")
+                                else:
+                                    logger.error("❌ Embedding model is None")
+                                    self.embedding_gen = None
+                        except Exception as pytorch_error:
+                            logger.error(f"❌ PyTorch initialization failed: {pytorch_error}")
                             logger.warning("⚠️ Falling back to TF-IDF (not true hybrid)")
                             self.embedding_gen = None
-                        else:
-                            logger.info("✅ PyTorch check passed, initializing embeddings...")
-                            embedding_config = EmbeddingConfig(
-                                model_name=settings.EMBEDDING_MODEL,
-                                dimension=settings.EMBEDDING_DIMENSION
-                            )
-                            self.embedding_gen = EmbeddingGenerator(embedding_config)
-                            
-                            if self.embedding_gen.model is not None:
-                                logger.info("✅✅✅ Embedding generator initialized (PyTorch fallback)")
-                                test_emb = self.embedding_gen.generate_embedding("test")
-                                if test_emb and len(test_emb) > 0:
-                                    logger.info(f"✅ Embedding verified: {len(test_emb)} dimensions")
-                            else:
-                                logger.error("❌ Embedding model is None")
-                                self.embedding_gen = None
-                    except Exception as pytorch_error:
-                        logger.error(f"❌ PyTorch initialization failed: {pytorch_error}")
-                        logger.warning("⚠️ Falling back to TF-IDF (not true hybrid)")
-                        self.embedding_gen = None
                         
                 except Exception as embed_error:
                     logger.error(f"❌ Failed to initialize OpenAI embeddings: {embed_error}", exc_info=True)
@@ -222,6 +229,7 @@ class RAGService:
                 
                 if is_openai_embeddings:
                     # For OpenAI embeddings, use OpenAI-compatible semantic retriever (NO PYTORCH!)
+                    logger.info("Semantic retriever: OpenAI + FAISS")
                     logger.info("✅ Using OpenAI embeddings for TRUE HYBRID SEARCH (BM25 + Embeddings)")
                     try:
                         from retrieval.openai_semantic_retriever import OpenAISemanticRetriever
@@ -307,108 +315,43 @@ class RAGService:
             self.hybrid_retriever = None
     
     def _load_vector_store(self):
-        """Load FAISS index and chunk metadata with robust error handling"""
-        # Try multiple possible paths
-        possible_paths = [
-            project_root / "data" / "indices" / "faiss_index.pkl",
-            project_root / "data" / "faiss_index.bin",
-            project_root / "data" / "processed" / "faiss_index.bin",
-            project_root / "notebooks" / "phase1" / "data" / "faiss_index.bin",
-            Path("data/indices/faiss_index.pkl"),
-            Path("data/faiss_index.bin"),
-            Path("notebooks/phase1/data/faiss_index.bin"),
-            Path.cwd() / "data" / "faiss_index.bin"
-        ]
-        
-        faiss_path = None
-        metadata_path = None
-        
-        for path in possible_paths:
-            if path.exists():
-                faiss_path = path
-                # Try both .pkl and separate metadata file
-                if path.suffix == '.pkl':
-                    metadata_path = path  # Combined file
-                else:
-                    metadata_path = path.parent / "chunk_metadata.pkl"
-                break
-        
-        # Check for combined .pkl file first
-        pkl_path = None
-        for path in possible_paths:
-            if path.exists() and path.suffix == '.pkl':
-                pkl_path = path
-                break
-        
-        if pkl_path:
-            # Load from combined .pkl file
+        """Load FAISS index and chunk metadata. Paths: data/faiss_index.bin, data/chunk_metadata.pkl."""
+        faiss_path = project_root / "data" / "faiss_index.bin"
+        metadata_path = project_root / "data" / "chunk_metadata.pkl"
+
+        self.faiss_index = None
+        self.chunk_metadata = []
+
+        if faiss_path.exists() and metadata_path.exists():
             try:
-                with open(pkl_path, 'rb') as f:
-                    data = pickle.load(f)
-                    self.faiss_index = data.get('faiss_index')
-                    self.chunk_metadata = data.get('chunk_metadata', [])
-                if self.faiss_index:
-                    logger.info(f"✅ Loaded FAISS index from {pkl_path}: {self.faiss_index.ntotal} vectors, {len(self.chunk_metadata)} chunks")
-                    # TEMPORARY DEBUG: ingestion vs runtime embedding dimension
-                    faiss_d = getattr(self.faiss_index, "d", None)
-                    runtime_dim = getattr(settings, "EMBEDDING_DIMENSION", None)
-                    logger.info(
-                        "[DEBUG] FAISS index dimension (ingestion): faiss_index.d=%s | runtime embedding dimension (settings.EMBEDDING_DIMENSION): %s | match=%s",
-                        faiss_d, runtime_dim, faiss_d == runtime_dim,
-                    )
-                else:
-                    logger.warning(f"⚠️  FAISS index is None in {pkl_path}")
-                    self.faiss_index = None
-                    self.chunk_metadata = []
+                self.faiss_index = faiss.read_index(str(faiss_path))
+                with open(metadata_path, "rb") as f:
+                    self.chunk_metadata = pickle.load(f)
+                ntotal = getattr(self.faiss_index, "ntotal", 0)
+                n_chunks = len(self.chunk_metadata) if self.chunk_metadata else 0
+                logger.info("FAISS loaded: ntotal=%s | chunks_loaded=%s", ntotal, n_chunks)
+                faiss_d = getattr(self.faiss_index, "d", None)
+                runtime_dim = getattr(settings, "EMBEDDING_DIMENSION", None)
+                logger.info(
+                    "[DEBUG] FAISS index dimension (ingestion): faiss_index.d=%s | runtime embedding dimension (settings.EMBEDDING_DIMENSION): %s | match=%s",
+                    faiss_d, runtime_dim, faiss_d == runtime_dim,
+                )
             except Exception as e:
-                logger.error(f"❌ Error loading combined FAISS index from {pkl_path}: {e}")
+                logger.error("Error loading FAISS or metadata from data/: %s", e)
                 self.faiss_index = None
                 self.chunk_metadata = []
-        elif faiss_path and faiss_path.exists():
-            # Load from separate files
-            if metadata_path and metadata_path.exists():
-                try:
-                    self.faiss_index = faiss.read_index(str(faiss_path))
-                    with open(metadata_path, "rb") as f:
-                        self.chunk_metadata = pickle.load(f)
-                    logger.info(f"✅ Loaded FAISS index with {self.faiss_index.ntotal} vectors from {faiss_path}")
-                    # TEMPORARY DEBUG: ingestion vs runtime embedding dimension
-                    faiss_d = getattr(self.faiss_index, "d", None)
-                    runtime_dim = getattr(settings, "EMBEDDING_DIMENSION", None)
-                    logger.info(
-                        "[DEBUG] FAISS index dimension (ingestion): faiss_index.d=%s | runtime embedding dimension (settings.EMBEDDING_DIMENSION): %s | match=%s",
-                        faiss_d, runtime_dim, faiss_d == runtime_dim,
-                    )
-                except Exception as e:
-                    logger.error(f"❌ Error loading vector store: {e}")
-                    self.faiss_index = None
-                    self.chunk_metadata = []
-            else:
-                logger.warning(f"FAISS index found but metadata not found: {metadata_path}")
-                self.faiss_index = None
+        elif metadata_path.exists():
+            self.faiss_index = None
+            try:
+                with open(metadata_path, "rb") as f:
+                    self.chunk_metadata = pickle.load(f)
+                n_chunks = len(self.chunk_metadata) if self.chunk_metadata else 0
+                logger.info("Metadata-only loaded: FAISS ntotal=N/A | chunks_loaded=%s (TF-IDF only)", n_chunks)
+            except Exception as e:
+                logger.warning("Could not load data/chunk_metadata.pkl: %s", e)
                 self.chunk_metadata = []
         else:
-            logger.warning("FAISS index not found. Run data ingestion first.")
-            logger.warning(f"Looked in: {[str(p) for p in possible_paths]}")
-            self.faiss_index = None
-            # Reversible fallback: load standalone chunk_metadata.pkl for TF-IDF-only search
-            metadata_only_paths = [
-                project_root / "data" / "chunk_metadata.pkl",
-                project_root / "data" / "indices" / "chunk_metadata.pkl",
-                Path("data/chunk_metadata.pkl"),
-            ]
-            for mp in metadata_only_paths:
-                if mp.exists():
-                    try:
-                        with open(mp, "rb") as f:
-                            self.chunk_metadata = pickle.load(f)
-                        logger.info("✅ Loaded chunk metadata only from %s (%s chunks); TF-IDF search available", mp, len(self.chunk_metadata))
-                        break
-                    except Exception as e:
-                        logger.warning("Could not load %s: %s", mp, e)
-            else:
-                logger.error("To fix: Run 'python scripts/ingest_data.py' to create the FAISS index")
-                self.chunk_metadata = []
+            logger.warning("FAISS index not found. Expected data/faiss_index.bin and data/chunk_metadata.pkl")
     
     def search(
         self,
@@ -776,8 +719,16 @@ class RAGService:
         )
         
         if has_valid_embeddings:
-            # Use semantic embeddings (FAISS)
-            logger.info("Using semantic embeddings search")
+            # Use semantic embeddings (FAISS) - OpenAI or PyTorch
+            is_openai = (
+                hasattr(embedding_gen, "config")
+                and hasattr(embedding_gen.config, "api_key")
+                and embedding_gen.config.api_key
+            )
+            if is_openai:
+                logger.info("Semantic retriever: OpenAI + FAISS")
+            else:
+                logger.info("Using semantic embeddings search")
             try:
                 return self._search_with_embeddings(query, top_k, embedding_gen)
             except Exception as e:
