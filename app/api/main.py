@@ -2,6 +2,7 @@
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 import uvicorn
 import os
@@ -84,6 +85,12 @@ async def root():
         "docs": "/docs",
         "health": "/api/v1/health"
     }
+
+
+@app.get("/health")
+async def health_redirect():
+    """Redirect /health to /api/v1/health. Clients that request /health get the canonical health JSON."""
+    return RedirectResponse(url="/api/v1/health", status_code=307)
 
 
 if __name__ == "__main__":
