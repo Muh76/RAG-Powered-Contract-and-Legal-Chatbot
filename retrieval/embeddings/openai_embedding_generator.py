@@ -109,9 +109,11 @@ class OpenAIEmbeddingGenerator:
         current_batch = 0
         start_time = time.time()
         
-        # Initial delay before starting (let API cool down if we just started)
-        logger.info("   ⏸️  Waiting 5 seconds before starting to avoid initial rate limit...")
-        time.sleep(5.0)
+        # Initial delay only for multi-batch (ingestion). Skipped for single-query runtime (chat)
+        # to avoid adding 5s latency to every RAG query. Removed from chat path per requirement.
+        if total_batches > 1:
+            logger.info("   ⏸️  Waiting 5 seconds before starting to avoid initial rate limit...")
+            time.sleep(5.0)
         
         for batch_start in range(0, len(valid_indices), batch_size):
             current_batch += 1

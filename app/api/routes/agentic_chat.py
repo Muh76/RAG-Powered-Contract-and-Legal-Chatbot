@@ -11,7 +11,7 @@ from app.models.schemas import (
     Source
 )
 from app.services.agent_service import AgenticRAGService
-from app.services.guardrails_service import GuardrailsService
+from app.api.routes.chat import get_guardrails_service
 from app.auth.dependencies import get_current_active_user, require_solicitor_or_admin
 from app.auth.models import User, UserRole
 from datetime import datetime
@@ -28,10 +28,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Initialize services (singleton pattern)
+# Initialize services (singleton pattern). Guardrails uses chat.init_chat_services() singleton.
 agent_service_solicitor = None
 agent_service_public = None
-guardrails_service = None
 
 
 def get_agent_service(mode: str = "public") -> AgenticRAGService:
@@ -58,16 +57,6 @@ def get_agent_service(mode: str = "public") -> AgenticRAGService:
                 logger.error(f"❌ Failed to initialize agentic service: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=f"Failed to initialize agentic service: {str(e)}")
         return agent_service_public
-
-
-def get_guardrails_service():
-    """Get or create guardrails service (singleton)"""
-    global guardrails_service
-    if guardrails_service is None:
-        from app.services.guardrails_service import GuardrailsService
-        guardrails_service = GuardrailsService()
-        logger.info("✅ GuardrailsService initialized")
-    return guardrails_service
 
 
 def map_reason_to_safety_flag(reason: str) -> SafetyFlag:

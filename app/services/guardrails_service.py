@@ -332,16 +332,16 @@ class GuardrailsService:
                 "message": query_validation["message"]
             })
         
-            # Rule 2: Citation enforcement - STRICT: must match actual source IDs
-            num_sources = len(retrieved_chunks)
-            if citation_validation:
-                citation_check = citation_validation
-                # If citation_validation was provided, ensure it has retrieved_chunks context
-                if 'valid_citations' not in citation_check or not citation_check.get('valid_citations'):
-                    citation_check = self.check_citations(answer, num_sources, retrieved_chunks)
-            else:
+        # Rule 2: Citation enforcement - STRICT: must match actual source IDs (always run)
+        num_sources = len(retrieved_chunks)
+        if citation_validation:
+            citation_check = citation_validation
+            # If citation_validation was provided, ensure it has retrieved_chunks context
+            if 'valid_citations' not in citation_check or not citation_check.get('valid_citations'):
                 citation_check = self.check_citations(answer, num_sources, retrieved_chunks)
-            results["rules_applied"].append("citation_enforcement")
+        else:
+            citation_check = self.check_citations(answer, num_sources, retrieved_chunks)
+        results["rules_applied"].append("citation_enforcement")
         if not citation_check.get("has_citations", False):
             results["all_passed"] = False
             results["failures"].append({

@@ -142,7 +142,8 @@ EXAMPLE BAD RESPONSE (DO NOT DO THIS):
                     {"role": "user", "content": user_prompt}
                 ],
                 max_tokens=self.max_tokens,
-                temperature=self.temperature
+                temperature=self.temperature,
+                timeout=60.0
             )
             logger.info(f"✅ OpenAI API call successful: response_id={response.id if hasattr(response, 'id') else 'N/A'}")
             

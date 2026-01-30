@@ -19,6 +19,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 import time
 import logging
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
 
@@ -32,48 +33,65 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Shared thread pool executor for blocking operations (prevents segfaults from PyTorch in async context)
-# Use a single worker to avoid potential deadlocks with PyTorch/FAISS
-_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="rag_worker")
+# Two workers allow retrieval and LLM to run concurrently for different requests (no shared mutable state in tasks).
+_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="rag_worker")
 
-# Initialize services (singleton pattern)
+# Initialize services (singleton pattern) - set at application startup via init_chat_services()
 rag_service = None
 guardrails_service = None
 llm_service = None
 
+
+def init_chat_services():
+    """Initialize RAG and Guardrails services once at application startup. Called from lifespan."""
+    global rag_service, guardrails_service
+    logger.info("🔄 Initializing RAGService...")
+    try:
+        rag_service = RAGService()
+        if rag_service.faiss_index is None and rag_service.embedding_gen is None:
+            logger.warning("⚠️ RAG service initialized but has no FAISS index or embeddings")
+        else:
+            logger.info("✅ RAGService initialized successfully")
+    except SystemExit:
+        logger.error("❌ RAG service initialization caused process exit (possible segfault)")
+        logger.warning("⚠️ Creating degraded RAG service")
+        rag_service = _create_degraded_rag_service()
+    except Exception as e:
+        logger.error(f"❌ RAG initialization failed with exception: {e}")
+        logger.warning("⚠️ Creating degraded RAG service (will use TF-IDF fallback)")
+        rag_service = _create_degraded_rag_service()
+    except BaseException:
+        logger.error("❌ RAG initialization failed with unknown error")
+        logger.warning("⚠️ Creating degraded RAG service")
+        rag_service = _create_degraded_rag_service()
+
+    logger.info("🔄 Initializing GuardrailsService...")
+    try:
+        guardrails_service = GuardrailsService()
+        logger.info("✅ GuardrailsService initialized")
+    except Exception as e:
+        logger.error(f"❌ Guardrails initialization failed: {e}", exc_info=True)
+        guardrails_service = None
+
+
 def get_rag_service():
-    """Get RAG service - initialize with proper error handling"""
-    global rag_service
-    
+    """Get RAG service (must be initialized at startup via init_chat_services())."""
     if rag_service is None:
-        logger.info("🔄 Initializing RAGService...")
-        try:
-            # CRITICAL: Try to initialize RAG service
-            # If it segfaults, we can't catch it in Python, but at least we try
-            rag_service = RAGService()
-            
-            # Verify RAG service is actually usable
-            if rag_service.faiss_index is None and rag_service.embedding_gen is None:
-                logger.warning("⚠️ RAG service initialized but has no FAISS index or embeddings")
-                # This is degraded but not crashed
-            else:
-                logger.info("✅ RAGService initialized successfully")
-                
-        except SystemExit:
-            # This might catch segfaults in some cases
-            logger.error("❌ RAG service initialization caused process exit (possible segfault)")
-            logger.warning("⚠️ Creating degraded RAG service")
-            rag_service = _create_degraded_rag_service()
-        except Exception as e:
-            logger.error(f"❌ RAG initialization failed with exception: {e}")
-            logger.warning("⚠️ Creating degraded RAG service (will use TF-IDF fallback)")
-            rag_service = _create_degraded_rag_service()
-        except:
-            # Catch anything else (including segfaults that become exceptions)
-            logger.error("❌ RAG initialization failed with unknown error")
-            logger.warning("⚠️ Creating degraded RAG service")
-            rag_service = _create_degraded_rag_service()
-    
+        raise HTTPException(
+            status_code=503,
+            detail="RAG service is not available. Application may not have started correctly.",
+        )
     return rag_service
+
+
+def get_guardrails_service():
+    """Get Guardrails service (must be initialized at startup via init_chat_services())."""
+    if guardrails_service is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Guardrails service is not available. Application may not have started correctly.",
+        )
+    return guardrails_service
 
 
 def _create_degraded_rag_service():
@@ -133,12 +151,6 @@ def _create_degraded_rag_service():
     
     return rag_service
 
-def get_guardrails_service():
-    global guardrails_service
-    if guardrails_service is None:
-        guardrails_service = GuardrailsService()  # Let exception propagate
-        logger.info("✅ GuardrailsService initialized")
-    return guardrails_service
 
 def get_llm_service():
     global llm_service
@@ -201,6 +213,8 @@ async def chat(
     llm_result = None  # type: Optional[Dict[str, Any]]
     response_mode = "public"  # type: str
     start_time = time.time()
+    request_id = str(uuid.uuid4())
+    logger.info("CHAT_STAGE request_id=%s stage=auth_resolved", request_id)
     
     try:
         # 1. Validate query with guardrails
@@ -211,11 +225,12 @@ async def chat(
             raise HTTPException(status_code=500, detail=f"Guardrails service error: {str(e)}")
         
         query_validation = guardrails.validate_query(request.query)
+        logger.info("CHAT_STAGE request_id=%s stage=guardrails_query_done valid=%s", request_id, query_validation.get("valid"))
         
         if not query_validation["valid"]:
             # Map reason to SafetyFlag enum
             safety_flag = map_reason_to_safety_flag(query_validation["reason"])
-            
+            logger.info("CHAT_STAGE request_id=%s stage=response_return reason=guardrails_reject", request_id)
             return ChatResponse(
                 answer=query_validation["message"],
                 sources=[],
@@ -282,6 +297,7 @@ async def chat(
         
         # CRITICAL FIX: Run blocking PyTorch/FAISS operations in thread pool to prevent segfault
         retrieval_start = time.time()
+        logger.info("CHAT_STAGE request_id=%s stage=retrieval_start", request_id)
         try:
             # Run retrieval in executor to avoid blocking event loop and segfaults
             loop = asyncio.get_event_loop()
@@ -305,10 +321,14 @@ async def chat(
                     private_corpus_results=private_corpus_results
                 )
             
-            retrieval_result = await loop.run_in_executor(
-                _executor,
-                search_func
-            )
+            try:
+                retrieval_result = await asyncio.wait_for(
+                    loop.run_in_executor(_executor, search_func),
+                    30.0
+                )
+            except asyncio.TimeoutError:
+                raise HTTPException(status_code=504, detail="Operation timed out")
+            logger.info("CHAT_STAGE request_id=%s stage=retrieval_done count=%s", request_id, len(retrieval_result) if retrieval_result else 0)
             
             retrieval_time_ms = (time.time() - retrieval_start) * 1000
             
@@ -375,6 +395,7 @@ async def chat(
             
             if not retrieval_result:
                 logger.warning("No results retrieved from RAG service")
+                logger.info("CHAT_STAGE request_id=%s stage=response_return reason=no_retrieval_result", request_id)
                 return ChatResponse(
                     answer="I couldn't find relevant information to answer your question. Please try rephrasing your query or ensure that legal documents have been ingested.",
                     sources=[],
@@ -437,6 +458,7 @@ async def chat(
                         **(metadata if isinstance(metadata, dict) else {})  # Include all other metadata
                     }
                 ))
+            logger.info("CHAT_STAGE request_id=%s stage=post_filter_done sources=%s", request_id, len(sources))
             
         except Exception as e:
             logger.error(f"Retrieval error: {e}", exc_info=True)
@@ -498,6 +520,7 @@ async def chat(
                 if avg_similarity > 0 and avg_similarity < similarity_threshold:
                         generation_time_ms = (time.time() - generation_start) * 1000
                         logger.warning(f"Rejecting query due to weak retrieval similarity: {avg_similarity:.3f}")
+                        logger.info("CHAT_STAGE request_id=%s stage=response_return reason=weak_similarity", request_id)
                         return ChatResponse(
                             answer=f"I cannot provide a confident answer because the retrieved sources have weak relevance (similarity: {avg_similarity:.3f}). The available sources may not contain sufficient information to answer this question accurately. Please try rephrasing your question or be more specific about the legal topic.",
                             sources=sources,
@@ -522,16 +545,24 @@ async def chat(
             
             # Use generate_legal_answer for proper mode-based responses with citations
             loop = asyncio.get_event_loop()
+            logger.info("CHAT_STAGE request_id=%s stage=llm_call_start", request_id)
             logger.info(f"🔄 Calling LLM service with query length: {len(request.query)}, chunks: {len(retrieval_result)}, mode: {response_mode}")
-            llm_result = await loop.run_in_executor(
-                _executor,
-                lambda: llm.generate_legal_answer(
-                    query=request.query,
-                    retrieved_chunks=retrieval_result,
-                    mode=response_mode
+            try:
+                llm_result = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        _executor,
+                        lambda: llm.generate_legal_answer(
+                            query=request.query,
+                            retrieved_chunks=retrieval_result,
+                            mode=response_mode
+                        )
+                    ),
+                    60.0
                 )
-            )
+            except asyncio.TimeoutError:
+                raise HTTPException(status_code=504, detail="Operation timed out")
             generation_time_ms = (time.time() - generation_start) * 1000
+            logger.info("CHAT_STAGE request_id=%s stage=llm_call_done", request_id)
             logger.info(f"✅ LLM service returned result: type={type(llm_result)}, is_dict={isinstance(llm_result, dict)}")
             
 
@@ -587,6 +618,7 @@ async def chat(
                 if citation_failure and isinstance(citation_failure, dict):
                     citation_msg = citation_failure.get('message', 'Missing citations')
                     logger.warning(f"Answer rejected due to missing citations: {citation_msg}")
+                    logger.info("CHAT_STAGE request_id=%s stage=response_return reason=citation_failure", request_id)
                     return ChatResponse(
                         answer=f"I cannot provide this answer because it lacks proper citations to legal sources. {citation_msg}. Please regenerate with citations in [1], [2] format.",
                         sources=sources,
@@ -714,11 +746,13 @@ async def chat(
         # FastAPI will serialize ChatResponse, so we add metadata via response_model_exclude_unset=False
         # Actually, let's just return the response and handle metadata extraction in frontend
         
+        logger.info("CHAT_STAGE request_id=%s stage=response_return reason=success", request_id)
         return response_obj
         
     except HTTPException:
         raise
     except Exception as e:
+        logger.error("CHAT_STAGE request_id=%s stage=response_return reason=exception error=%s", request_id, str(e), exc_info=True)
         logger.error(f"Error in chat endpoint: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
