@@ -43,8 +43,29 @@ class HealthChecker:
         self._cache = {}
         self._cache_ttl = 30  # Cache results for 30 seconds
     
+    def _db_error_message(self, e: Exception) -> str:
+        """Return a clearer, actionable message for common DB failures."""
+        s = str(e).lower()
+        if "connection" in s and ("refused" in s or "not permitted" in s or "could not connect" in s):
+            return (
+                "PostgreSQL not reachable (is it running on host:port?). "
+                f"Original: {e}"
+            )
+        if "password authentication failed" in s or "authentication failed" in s:
+            return (
+                "Authentication failed (check user/password in DATABASE_URL). "
+                f"Original: {e}"
+            )
+        if 'database "legal_chatbot" does not exist' in s:
+            return (
+                "Database 'legal_chatbot' does not exist. "
+                "Create it: CREATE DATABASE legal_chatbot; "
+                f"Original: {e}"
+            )
+        return f"Database connection failed: {e}"
+
     async def check_database(self) -> Dict[str, Any]:
-        """Check PostgreSQL database health"""
+        """Check PostgreSQL database health via connect + SELECT 1."""
         cache_key = "database"
         if cache_key in self._cache:
             cached_time, cached_result = self._cache[cache_key]
@@ -60,16 +81,25 @@ class HealthChecker:
                 }
             else:
                 start_time = time.time()
-                conn = psycopg2.connect(
-                    settings.DATABASE_URL,
-                    connect_timeout=5,
-                )
-                conn.close()
+                conn = None
+                try:
+                    conn = psycopg2.connect(
+                        settings.DATABASE_URL,
+                        connect_timeout=5,
+                    )
+                    cur = conn.cursor()
+                    try:
+                        cur.execute("SELECT 1")
+                        cur.fetchone()
+                    finally:
+                        cur.close()
+                finally:
+                    if conn is not None:
+                        conn.close()
                 response_time = (time.time() - start_time) * 1000
-                
                 result = {
                     "status": "healthy",
-                    "message": "Database connection successful",
+                    "message": "Database connection and query OK",
                     "response_time_ms": round(response_time, 2),
                 }
             
@@ -77,9 +107,10 @@ class HealthChecker:
             return result
             
         except Exception as e:
+            msg = self._db_error_message(e)
             result = {
                 "status": "unhealthy",
-                "message": f"Database connection failed: {str(e)}",
+                "message": msg,
                 "response_time_ms": 0,
             }
             logger.warning(f"Database health check failed: {e}")
