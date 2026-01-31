@@ -34,9 +34,13 @@ class AdvancedHybridRetriever:
     """
     Advanced hybrid retriever combining BM25 + Semantic search with metadata filtering.
     
+    - BM25 is always used for lexical search
+    - Semantic retriever uses OpenAI embeddings + FAISS when available (never TF-IDF if FAISS loaded)
+    - Hybrid fusion (RRF) combines BOTH result sets
+    
     This class provides:
     1. BM25 keyword-based search
-    2. Semantic search using embeddings
+    2. Semantic search using embeddings (OpenAI+FAISS or TF-IDF only when FAISS not loaded)
     3. Metadata filtering (pre-filter or post-filter)
     4. Fusion strategies (RRF, weighted)
     5. Top-k final results
@@ -182,6 +186,15 @@ class AdvancedHybridRetriever:
         """
         top_k = top_k or settings.HYBRID_SEARCH_TOP_K_FINAL
         
+        # BM25 is always used for lexical search; semantic uses OpenAI+FAISS when available (never TF-IDF if FAISS loaded)
+        uses_faiss = (
+            hasattr(self.semantic_retriever, "faiss_index")
+            and self.semantic_retriever.faiss_index is not None
+            and getattr(self.semantic_retriever, "is_ready", lambda: False)()
+        )
+        if uses_faiss:
+            logger.info("Semantic retriever: OpenAI + FAISS (no TF-IDF fallback when FAISS loaded)")
+        
         # Get expanded top_k for fusion (retrieve more, then fuse and return top_k)
         top_k_bm25 = settings.HYBRID_SEARCH_TOP_K_BM25
         top_k_semantic = settings.HYBRID_SEARCH_TOP_K_SEMANTIC
@@ -261,8 +274,17 @@ class AdvancedHybridRetriever:
                 
         except Exception as e:
             logger.error(f"Semantic search failed: {e}")
+            if hasattr(self.semantic_retriever, "faiss_index") and self.semantic_retriever.faiss_index is not None:
+                logger.warning("Semantic (OpenAI+FAISS) failed; proceeding with BM25 results only (no TF-IDF fallback)")
             semantic_results = []
-        
+
+        # Log sizes before fusion (BM25 always used; semantic uses OpenAI+FAISS when available)
+        logger.info(
+            "Hybrid fusion (RRF): bm25_results=%s | semantic_results=%s",
+            len(bm25_results),
+            len(semantic_results),
+        )
+
         # Step 3: Match BM25 and semantic results by chunk_id
         bm25_by_id = {r["chunk_id"]: r for r in bm25_results if r.get("chunk_id")}
         semantic_by_id = {r["chunk_id"]: r for r in semantic_results if r.get("chunk_id")}

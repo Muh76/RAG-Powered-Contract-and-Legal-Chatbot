@@ -389,6 +389,9 @@ class RAGService:
         # Check service state: need at least chunk_metadata for any search
         if len(self.chunk_metadata) == 0:
             logger.error("❌ No chunk metadata available - search cannot proceed")
+            logger.info(
+                "RAGService.search early return: retriever_type=N/A | faiss_ntotal=N/A | embedding_dim=N/A | chunks_retrieved=0"
+            )
             return []
         if self.faiss_index is not None:
             logger.info(f"📊 Service state: FAISS index has {self.faiss_index.ntotal} vectors, {len(self.chunk_metadata)} chunks")
@@ -429,10 +432,23 @@ class RAGService:
         else:
             combined_results = public_results
         
-        # TEMPORARY DEBUG: retriever type and counts before/after (private) fusion
+        # Detailed logging: retriever_type, faiss_ntotal, embedding_dim, chunks_retrieved before return
+        faiss_ntotal = getattr(self.faiss_index, "ntotal", None) if self.faiss_index else None
+        faiss_ntotal_str = str(faiss_ntotal) if faiss_ntotal is not None else "N/A"
+        embedding_dim = None
+        if self.faiss_index is not None:
+            embedding_dim = getattr(self.faiss_index, "d", None)
+        if embedding_dim is None and self.embedding_gen is not None and hasattr(self.embedding_gen, "get_embedding_dimension"):
+            embedding_dim = self.embedding_gen.get_embedding_dimension()
+        if embedding_dim is None and self.embedding_gen is not None and hasattr(self.embedding_gen, "config"):
+            embedding_dim = getattr(self.embedding_gen.config, "dimension", None)
+        embedding_dim_str = str(embedding_dim) if embedding_dim is not None else "N/A"
         logger.info(
-            "[DEBUG] retriever_type=%s | chunks_before_fusion(public)=%s | chunks_after_fusion(combined)=%s",
-            retriever_type, len(public_results), len(combined_results),
+            "RAGService.search: retriever_type=%s | faiss_ntotal=%s | embedding_dim=%s | chunks_retrieved=%s",
+            retriever_type,
+            faiss_ntotal_str,
+            embedding_dim_str,
+            len(combined_results),
         )
         logger.info(f"✅ Final search returned {len(combined_results)} results")
         
