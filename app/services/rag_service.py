@@ -64,6 +64,8 @@ class RAGService:
             logger.info("Loading FAISS index and metadata...")
             self._load_vector_store()
             logger.info(f"✅ Loaded {len(self.chunk_metadata)} chunks from FAISS index")
+        except RuntimeError:
+            raise  # Fail-fast: dimension mismatch, do not silently continue
         except Exception as e:
             logger.error(f"Failed to load FAISS index: {e}")
             self.faiss_index = None
@@ -330,12 +332,14 @@ class RAGService:
                 ntotal = getattr(self.faiss_index, "ntotal", 0)
                 n_chunks = len(self.chunk_metadata) if self.chunk_metadata else 0
                 logger.info("FAISS loaded: ntotal=%s | chunks_loaded=%s", ntotal, n_chunks)
-                faiss_d = getattr(self.faiss_index, "d", None)
-                runtime_dim = getattr(settings, "EMBEDDING_DIMENSION", None)
-                logger.info(
-                    "[DEBUG] FAISS index dimension (ingestion): faiss_index.d=%s | runtime embedding dimension (settings.EMBEDDING_DIMENSION): %s | match=%s",
-                    faiss_d, runtime_dim, faiss_d == runtime_dim,
-                )
+                faiss_d = self.faiss_index.d
+                runtime_dim = settings.EMBEDDING_DIMENSION
+                if faiss_d != runtime_dim:
+                    raise RuntimeError(
+                        f"FAISS embedding dimension mismatch: index has d={faiss_d}, "
+                        f"settings.EMBEDDING_DIMENSION={runtime_dim}. "
+                        "Re-run ingestion with the correct embedding model (e.g. python scripts/ingest_data.py)."
+                    )
             except Exception as e:
                 logger.error("Error loading FAISS or metadata from data/: %s", e)
                 self.faiss_index = None
