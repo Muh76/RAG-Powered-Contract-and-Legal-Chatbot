@@ -162,7 +162,8 @@ class AdvancedHybridRetriever:
         top_k: int = None,
         metadata_filter: Optional[MetadataFilter] = None,
         pre_filter: bool = True,
-        similarity_threshold: float = 0.0
+        similarity_threshold: float = 0.0,
+        request_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Perform hybrid search combining BM25 + Semantic search.
@@ -278,11 +279,13 @@ class AdvancedHybridRetriever:
                 logger.warning("Semantic (OpenAI+FAISS) failed; proceeding with BM25 results only (no TF-IDF fallback)")
             semantic_results = []
 
-        # Log sizes before fusion (BM25 always used; semantic uses OpenAI+FAISS when available)
+        # Per-request debug logging (INFO/DEBUG only)
+        req_prefix = f"request_id={request_id} " if request_id else ""
+        bm25_count = len(bm25_results)
+        semantic_count = len(semantic_results)
         logger.info(
-            "Hybrid fusion (RRF): bm25_results=%s | semantic_results=%s",
-            len(bm25_results),
-            len(semantic_results),
+            "RAG_DEBUG %sretriever_type=hybrid | bm25_chunks=%s | faiss_chunks=%s",
+            req_prefix, bm25_count, semantic_count,
         )
 
         # Step 3: Match BM25 and semantic results by chunk_id
@@ -436,16 +439,16 @@ class AdvancedHybridRetriever:
         # Add final rank
         for rank, result in enumerate(final_results, 1):
             result["rank"] = rank
-        
-        logger.debug(
-            f"Hybrid search completed: query='{query[:50]}...', "
-            f"bm25_results={len(bm25_results)}, "
-            f"semantic_results={len(semantic_results)}, "
-            f"fused_results={len(fused_results)}, "
-            f"final_results={len(final_results)}, "
-            f"reranking={'enabled' if self.enable_reranking and self.reranker and self.reranker.is_ready() else 'disabled'}"
+
+        logger.info(
+            "RAG_DEBUG %sretriever_type=hybrid | chunks_after_fusion=%s",
+            req_prefix, len(final_results),
         )
-        
+        for i, r in enumerate(final_results[:3], 1):
+            chunk_id = r.get("chunk_id", "N/A")
+            title = (r.get("metadata") or {}).get("title", r.get("title", "N/A"))
+            logger.debug("RAG_DEBUG %stop_%s chunk_id=%s title=%s", req_prefix, i, chunk_id, title)
+
         return final_results
     
     def _fuse_scores(

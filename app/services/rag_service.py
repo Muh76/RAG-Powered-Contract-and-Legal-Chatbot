@@ -60,17 +60,16 @@ class RAGService:
         # This prevents one component failure from crashing the entire service
         
         # Step 1: Load FAISS index first (safer, doesn't require PyTorch)
+        logger.info("Loading FAISS index and metadata...")
         try:
-            logger.info("Loading FAISS index and metadata...")
             self._load_vector_store()
-            logger.info(f"✅ Loaded {len(self.chunk_metadata)} chunks from FAISS index")
         except RuntimeError:
-            raise  # Fail-fast: dimension mismatch, do not silently continue
+            raise  # Fail-fast: dimension mismatch, metadata mismatch - do not degrade
         except Exception as e:
-            logger.error(f"Failed to load FAISS index: {e}")
-            self.faiss_index = None
-            self.chunk_metadata = []
-            # No FAISS: TF-IDF-only mode allowed (metadata exists)
+            logger.error("FAISS load failed: %s", e)
+            raise  # Do not allow degraded state; crash startup on load failure
+        if self.faiss_index is not None:
+            logger.info("FAISS loaded: %s chunks", len(self.chunk_metadata))
         
         # Step 2: Initialize embedding generator (for semantic search in hybrid mode)
         # When DISABLE_LOCAL_EMBEDDINGS=True and OpenAI API key present: use OpenAI + FAISS for semantic retrieval
@@ -329,7 +328,8 @@ class RAGService:
             self.hybrid_retriever = None
     
     def _load_vector_store(self):
-        """Load FAISS index and chunk metadata. Paths: data/faiss_index.bin, data/chunk_metadata.pkl."""
+        """Load FAISS index and chunk metadata. Paths: data/faiss_index.bin, data/chunk_metadata.pkl.
+        Crashes startup on dimension mismatch or metadata count mismatch. No degraded state."""
         faiss_path = project_root / "data" / "faiss_index.bin"
         metadata_path = project_root / "data" / "chunk_metadata.pkl"
 
@@ -337,25 +337,32 @@ class RAGService:
         self.chunk_metadata = []
 
         if faiss_path.exists() and metadata_path.exists():
-            try:
-                self.faiss_index = faiss.read_index(str(faiss_path))
-                with open(metadata_path, "rb") as f:
-                    self.chunk_metadata = pickle.load(f)
-                ntotal = getattr(self.faiss_index, "ntotal", 0)
-                n_chunks = len(self.chunk_metadata) if self.chunk_metadata else 0
-                logger.info("FAISS loaded: ntotal=%s | chunks_loaded=%s", ntotal, n_chunks)
-                faiss_d = self.faiss_index.d
-                runtime_dim = settings.EMBEDDING_DIMENSION
-                if faiss_d != runtime_dim:
-                    raise RuntimeError(
-                        f"FAISS embedding dimension mismatch: index has d={faiss_d}, "
-                        f"settings.EMBEDDING_DIMENSION={runtime_dim}. "
-                        "Re-run ingestion with the correct embedding model (e.g. python scripts/ingest_data.py)."
-                    )
-            except Exception as e:
-                logger.error("Error loading FAISS or metadata from data/: %s", e)
-                self.faiss_index = None
-                self.chunk_metadata = []
+            self.faiss_index = faiss.read_index(str(faiss_path))
+            with open(metadata_path, "rb") as f:
+                self.chunk_metadata = pickle.load(f)
+
+            faiss_d = self.faiss_index.d
+            ntotal = getattr(self.faiss_index, "ntotal", 0)
+            n_chunks = len(self.chunk_metadata) if self.chunk_metadata else 0
+            runtime_dim = settings.EMBEDDING_DIMENSION
+
+            logger.info(
+                "FAISS load: faiss_dim=%s | runtime_embedding_dim=%s | metadata_chunk_count=%s | faiss_ntotal=%s",
+                faiss_d, runtime_dim, n_chunks, ntotal,
+            )
+
+            if faiss_d != runtime_dim:
+                raise RuntimeError(
+                    f"FAISS embedding dimension mismatch: index has d={faiss_d}, "
+                    f"settings.EMBEDDING_DIMENSION={runtime_dim}. "
+                    "Re-run ingestion with the correct embedding model (e.g. python scripts/ingest_data.py)."
+                )
+            if ntotal != n_chunks:
+                raise RuntimeError(
+                    f"FAISS metadata count mismatch: index has ntotal={ntotal}, "
+                    f"chunk_metadata has {n_chunks} chunks. "
+                    "Re-run ingestion to rebuild index and metadata."
+                )
         elif metadata_path.exists():
             self.faiss_index = None
             try:
@@ -380,7 +387,8 @@ class RAGService:
         highlight_sources: bool = False,
         user_id: Optional[int] = None,
         include_private_corpus: bool = False,
-        private_corpus_results: Optional[List[Dict[str, Any]]] = None
+        private_corpus_results: Optional[List[Dict[str, Any]]] = None,
+        request_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Search for relevant chunks.
@@ -430,7 +438,9 @@ class RAGService:
                 logger.info("Retrievers active: BM25 + OpenAI + FAISS")
             else:
                 logger.info("Retrievers active: BM25 + TF-IDF (no FAISS)")
-            public_results = self._hybrid_search(query, top_k, fusion_strategy, metadata_filter)
+            public_results = self._hybrid_search(
+                query, top_k, fusion_strategy, metadata_filter, request_id=request_id
+            )
         else:
             has_emb = (
                 self.embedding_gen is not None
@@ -443,7 +453,9 @@ class RAGService:
                 logger.info("Retrievers active: OpenAI + FAISS")
             else:
                 logger.info("Retrievers active: TF-IDF only (no FAISS)")
-            public_results = self._semantic_search(query, top_k)
+            public_results = self._semantic_search(
+                query, top_k, request_id=request_id, retriever_type=retriever_type
+            )
         
         logger.info(f"📋 Public corpus returned {len(public_results)} results")
         
@@ -454,25 +466,16 @@ class RAGService:
         else:
             combined_results = public_results
         
-        # Detailed logging: retriever_type, faiss_ntotal, embedding_dim, chunks_retrieved before return
-        faiss_ntotal = getattr(self.faiss_index, "ntotal", None) if self.faiss_index else None
-        faiss_ntotal_str = str(faiss_ntotal) if faiss_ntotal is not None else "N/A"
-        embedding_dim = None
-        if self.faiss_index is not None:
-            embedding_dim = getattr(self.faiss_index, "d", None)
-        if embedding_dim is None and self.embedding_gen is not None and hasattr(self.embedding_gen, "get_embedding_dimension"):
-            embedding_dim = self.embedding_gen.get_embedding_dimension()
-        if embedding_dim is None and self.embedding_gen is not None and hasattr(self.embedding_gen, "config"):
-            embedding_dim = getattr(self.embedding_gen.config, "dimension", None)
-        embedding_dim_str = str(embedding_dim) if embedding_dim is not None else "N/A"
+        # Per-request debug summary (INFO); top 3 chunk details at DEBUG (hybrid/semantic log their own)
+        req_prefix = f"request_id={request_id} " if request_id else ""
         logger.info(
-            "RAGService.search: retriever_type=%s | faiss_ntotal=%s | embedding_dim=%s | chunks_retrieved=%s",
-            retriever_type,
-            faiss_ntotal_str,
-            embedding_dim_str,
-            len(combined_results),
+            "RAG_DEBUG %sretriever_type=%s | chunks_after_fusion=%s | chunks_final=%s",
+            req_prefix, retriever_type, len(public_results), len(combined_results),
         )
-        logger.info(f"✅ Final search returned {len(combined_results)} results")
+        for i, r in enumerate(public_results[:3], 1):
+            chunk_id = r.get("chunk_id", "N/A")
+            title = (r.get("metadata") or {}).get("title", r.get("title", "N/A"))
+            logger.debug("RAG_DEBUG %stop_%s chunk_id=%s title=%s", req_prefix, i, chunk_id, title)
         
         # Add explainability if requested
         if include_explanation or highlight_sources:
@@ -554,7 +557,8 @@ class RAGService:
         query: str,
         top_k: int = 10,
         fusion_strategy: Optional[str] = None,
-        metadata_filter: Optional[MetadataFilter] = None
+        metadata_filter: Optional[MetadataFilter] = None,
+        request_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Perform hybrid search using BM25 + Semantic fusion"""
         try:
@@ -568,7 +572,8 @@ class RAGService:
                 query=query,
                 top_k=top_k,
                 metadata_filter=metadata_filter,
-                pre_filter=True
+                pre_filter=True,
+                request_id=request_id,
             )
             
             # Restore original strategy
@@ -743,35 +748,50 @@ class RAGService:
             logger.error(f"Embedding search failed: {e}", exc_info=True)
             return []
     
-    def _semantic_search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
+    def _semantic_search(
+        self,
+        query: str,
+        top_k: int = 10,
+        request_id: Optional[str] = None,
+        retriever_type: str = "FAISS",
+    ) -> List[Dict[str, Any]]:
         """Semantic search using embeddings. TF-IDF fallback only when FAISS does not exist."""
         embedding_gen = self.embedding_gen
-        
+
         has_valid_embeddings = (
-            embedding_gen is not None and 
-            hasattr(embedding_gen, 'model') and 
-            embedding_gen.model is not None and 
-            self.faiss_index is not None
+            embedding_gen is not None
+            and hasattr(embedding_gen, "model")
+            and embedding_gen.model is not None
+            and self.faiss_index is not None
         )
-        
+
         if has_valid_embeddings:
             logger.info("Semantic retriever: OpenAI + FAISS")
             try:
-                return self._search_with_embeddings(query, top_k, embedding_gen)
+                results = self._search_with_embeddings(query, top_k, embedding_gen)
             except Exception as e:
-                # FAISS exists: raise instead of TF-IDF fallback
                 raise RuntimeError(
                     f"FAISS search failed: {e}. TF-IDF fallback is disabled when FAISS exists."
                 ) from e
         elif self.faiss_index is not None:
-            # FAISS exists but embeddings unavailable - should not reach here (caught at startup)
             raise RuntimeError(
                 "FAISS exists but embeddings unavailable. TF-IDF fallback disabled."
             )
         else:
-            # No FAISS: TF-IDF-only mode allowed
             logger.info("Retrievers active: TF-IDF only (no FAISS)")
-            return self._search_with_tfidf(query, top_k)
+            results = self._search_with_tfidf(query, top_k)
+
+        # Per-request debug logging (INFO/DEBUG only)
+        req_prefix = f"request_id={request_id} " if request_id else ""
+        logger.info(
+            "RAG_DEBUG %sretriever_type=%s | bm25_chunks=0 | faiss_chunks=%s | chunks_after_fusion=%s",
+            req_prefix, retriever_type, len(results), len(results),
+        )
+        for i, r in enumerate(results[:3], 1):
+            chunk_id = r.get("chunk_id", "N/A")
+            title = (r.get("metadata") or {}).get("title", r.get("title", "N/A"))
+            logger.debug("RAG_DEBUG %stop_%s chunk_id=%s title=%s", req_prefix, i, chunk_id, title)
+        return results
         
         # REMOVED: All PyTorch embedding code to prevent segfaults
         # This code path is no longer used - we always use TF-IDF

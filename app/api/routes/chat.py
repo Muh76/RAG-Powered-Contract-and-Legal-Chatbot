@@ -327,7 +327,8 @@ async def chat(
                     use_hybrid=use_hybrid_search,  # Enable hybrid if available
                     user_id=current_user.id if include_private_corpus else None,
                     include_private_corpus=include_private_corpus and private_corpus_results is not None,
-                    private_corpus_results=private_corpus_results
+                    private_corpus_results=private_corpus_results,
+                    request_id=request_id,
                 )
             
             try:
