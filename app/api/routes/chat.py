@@ -54,16 +54,18 @@ def init_chat_services():
     try:
         rag_service = RAGService()
         if rag_service.faiss_index is None and rag_service.embedding_gen is None:
-            logger.warning("⚠️ RAG service initialized but has no FAISS index or embeddings")
+            logger.warning("⚠️ RAG service initialized in TF-IDF-only mode (no FAISS)")
         else:
             logger.info("✅ RAGService initialized successfully")
+    except RuntimeError:
+        raise  # Fail-fast: FAISS exists but unusable, or dimension mismatch - do not degrade
     except SystemExit:
         logger.error("❌ RAG service initialization caused process exit (possible segfault)")
         logger.warning("⚠️ Creating degraded RAG service")
         rag_service = _create_degraded_rag_service()
     except Exception as e:
         logger.error(f"❌ RAG initialization failed with exception: {e}")
-        logger.warning("⚠️ Creating degraded RAG service (will use TF-IDF fallback)")
+        logger.warning("⚠️ Creating degraded RAG service")
         rag_service = _create_degraded_rag_service()
     except BaseException:
         logger.error("❌ RAG initialization failed with unknown error")
@@ -122,36 +124,24 @@ def _create_degraded_rag_service():
     rag_service.hybrid_retriever = None
     rag_service.explainability_analyzer = None
     
-    # Try to load FAISS index and metadata from data/ (same paths as RAGService)
+    # Load metadata only (no FAISS) - TF-IDF fallback disabled when FAISS exists, so we never load FAISS without embeddings
     try:
         from pathlib import Path
         import pickle
-        import faiss
 
         base = Path(__file__).resolve().parent.parent.parent.parent
-        faiss_path = base / "data" / "faiss_index.bin"
         metadata_path = base / "data" / "chunk_metadata.pkl"
 
-        if faiss_path.exists() and metadata_path.exists():
-            try:
-                rag_service.faiss_index = faiss.read_index(str(faiss_path))
-                with open(metadata_path, "rb") as f:
-                    rag_service.chunk_metadata = pickle.load(f)
-                ntotal = getattr(rag_service.faiss_index, "ntotal", 0)
-                n_chunks = len(rag_service.chunk_metadata) if rag_service.chunk_metadata else 0
-                logger.info("FAISS loaded (degraded): ntotal=%s | chunks_loaded=%s", ntotal, n_chunks)
-            except Exception as e:
-                logger.warning("Could not load FAISS from data/: %s", e)
-        elif metadata_path.exists():
+        if metadata_path.exists():
             try:
                 with open(metadata_path, "rb") as f:
                     rag_service.chunk_metadata = pickle.load(f)
                 n_chunks = len(rag_service.chunk_metadata) if rag_service.chunk_metadata else 0
-                logger.info("Metadata-only loaded (degraded): FAISS ntotal=N/A | chunks_loaded=%s", n_chunks)
+                logger.info("Degraded mode: metadata-only (TF-IDF) | chunks_loaded=%s", n_chunks)
             except Exception as e:
                 logger.warning("Could not load data/chunk_metadata.pkl: %s", e)
     except Exception as load_error:
-        logger.warning("Could not load FAISS index: %s", load_error)
+        logger.warning("Could not load metadata: %s", load_error)
     
     return rag_service
 
@@ -283,7 +273,9 @@ async def chat(
             raise
         
         # Log which embedding path this request will use (no SentenceTransformer on chat path when DISABLE_LOCAL_EMBEDDINGS=true)
-        main_rag_mode = "hybrid (BM25+TF-IDF)" if (rag.hybrid_retriever is not None) else "TF-IDF"
+        sem = rag.hybrid_retriever.semantic_retriever if rag.hybrid_retriever else None
+        uses_faiss = sem and hasattr(sem, "faiss_index") and sem.faiss_index is not None
+        main_rag_mode = "hybrid (BM25+OpenAI+FAISS)" if (rag.hybrid_retriever and uses_faiss) else ("hybrid (BM25+TF-IDF)" if rag.hybrid_retriever else "TF-IDF")
         if not include_private_corpus:
             private_corpus_mode = "not used"
         elif getattr(settings, "DISABLE_LOCAL_EMBEDDINGS", True):
@@ -319,16 +311,16 @@ async def chat(
             # Run retrieval in executor to avoid blocking event loop and segfaults
             loop = asyncio.get_event_loop()
             
-            # Use hybrid search if available (BM25 + TF-IDF, NO PyTorch!)
-            # Hybrid search now works with BM25 + TF-IDF instead of BM25 + Semantic
             use_hybrid_search = rag.hybrid_retriever is not None
             if use_hybrid_search:
-                logger.info("Using hybrid search (BM25 + TF-IDF, NO PyTorch!)")
+                sem = rag.hybrid_retriever.semantic_retriever
+                uses_faiss = sem and hasattr(sem, "faiss_index") and sem.faiss_index is not None
+                logger.info("Retrievers active: %s", "BM25 + OpenAI + FAISS" if uses_faiss else "BM25 + TF-IDF")
             else:
-                logger.info("Using TF-IDF search")
+                logger.info("Retrievers active: TF-IDF only")
             
             def search_func():
-                # Use hybrid search if available (BM25 + TF-IDF, no PyTorch)
+                # Use hybrid search if available (BM25 + OpenAI + FAISS or BM25 + TF-IDF when no FAISS)
                 return rag.search(
                     query=request.query,
                     top_k=(request.top_k or 5) * 2,  # Retrieve more initially for filtering

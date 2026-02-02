@@ -13,9 +13,9 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class EmbeddingConfig:
-    """Configuration for embeddings"""
+    """Configuration for embeddings. System default: text-embedding-3-large (3072D)."""
     model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
-    dimension: int = 384
+    dimension: int = 3072  # System default; callers pass settings.EMBEDDING_DIMENSION
     batch_size: int = 32
     max_length: int = 512
 
@@ -210,10 +210,12 @@ class QdrantVectorStore(VectorStore):
             collection_names = [col.name for col in collections.collections]
             
             if self.collection_name not in collection_names:
+                from app.core.config import settings
+                dim = settings.EMBEDDING_DIMENSION
                 self.client.create_collection(
                     collection_name=self.collection_name,
                     vectors_config=self.VectorParams(
-                        size=384,  # Dimension of embeddings
+                        size=dim,
                         distance=self.Distance.COSINE
                     )
                 )

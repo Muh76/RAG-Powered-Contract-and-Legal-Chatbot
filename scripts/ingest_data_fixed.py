@@ -90,58 +90,66 @@ def ingest_data():
         embeddings = None
         embedding_dim = None
         
-        # Try sentence-transformers first
-        try:
-            from retrieval.embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
-            
-            embedding_config = EmbeddingConfig(
-                model_name="sentence-transformers/all-MiniLM-L6-v2",
-                dimension=384,
-                batch_size=16  # Smaller batch to avoid memory issues
-            )
-            
-            print("   Attempting to use sentence-transformers...")
-            embedding_gen = EmbeddingGenerator(embedding_config)
-            
-            if embedding_gen.model is None:
-                raise RuntimeError("Model is None")
-            
-            # Generate embeddings in smaller batches to avoid crashes
-            embeddings_list = []
-            batch_size = 8  # Very small batches
-            for i in range(0, len(chunk_texts), batch_size):
-                batch = chunk_texts[i:i+batch_size]
-                print(f"   Processing batch {i//batch_size + 1}/{(len(chunk_texts)-1)//batch_size + 1}...")
-                try:
+        # Prefer OpenAI embeddings (unified: text-embedding-3-large, 3072D)
+        from app.core.config import settings, _validate_embedding_config
+        api_key = os.getenv("OPENAI_API_KEY") or getattr(settings, "OPENAI_API_KEY", None)
+        if api_key:
+            try:
+                _validate_embedding_config()
+                from retrieval.embeddings.openai_embedding_generator import OpenAIEmbeddingGenerator, OpenAIEmbeddingConfig
+                embedding_config = OpenAIEmbeddingConfig(
+                    api_key=api_key,
+                    model=settings.OPENAI_EMBEDDING_MODEL,
+                    dimension=settings.EMBEDDING_DIMENSION,
+                    batch_size=16,
+                )
+                embedding_gen = OpenAIEmbeddingGenerator(embedding_config)
+                embeddings = embedding_gen.generate_embeddings_batch(chunk_texts)
+                embedding_dim = len(embeddings[0]) if embeddings else None
+                print(f"✅ Generated {len(embeddings)} embeddings using OpenAI (dim={embedding_dim})")
+            except Exception as e:
+                print(f"⚠️ OpenAI embeddings failed: {e}")
+                api_key = None  # Fall through to sentence-transformers
+        if not api_key or embeddings is None:
+            # Fallback: sentence-transformers (384D) or TF-IDF. For 3072D use scripts/ingest_data.py
+            try:
+                from retrieval.embeddings.embedding_generator import EmbeddingGenerator, EmbeddingConfig
+                embedding_config = EmbeddingConfig(
+                    model_name="sentence-transformers/all-MiniLM-L6-v2",
+                    dimension=384,  # all-MiniLM outputs 384D
+                    batch_size=16
+                )
+                print("   Attempting to use sentence-transformers...")
+                embedding_gen = EmbeddingGenerator(embedding_config)
+                if embedding_gen.model is None:
+                    raise RuntimeError("Model is None")
+                embeddings_list = []
+                batch_size = 8
+                for i in range(0, len(chunk_texts), batch_size):
+                    batch = chunk_texts[i:i+batch_size]
+                    print(f"   Processing batch {i//batch_size + 1}/{(len(chunk_texts)-1)//batch_size + 1}...")
                     batch_embeddings = embedding_gen.generate_embeddings_batch(batch)
                     embeddings_list.extend(batch_embeddings)
-                except Exception as e:
-                    print(f"   ⚠️ Error in batch {i//batch_size + 1}: {e}")
-                    # Fall back to TF-IDF for this batch
-                    raise
-            
-            embeddings = embeddings_list
-            embedding_dim = len(embeddings[0]) if embeddings else None
-            print(f"✅ Generated {len(embeddings)} embeddings using sentence-transformers (dim={embedding_dim})")
-            
-        except Exception as e:
-            print(f"⚠️ Sentence-transformers failed: {e}")
-            print("🔄 Falling back to TF-IDF...")
-            
-            try:
-                from sklearn.feature_extraction.text import TfidfVectorizer
-                vectorizer = TfidfVectorizer(
-                    max_features=1000,
-                    stop_words='english',
-                    ngram_range=(1, 2)
-                )
-                tfidf_matrix = vectorizer.fit_transform(chunk_texts)
-                embeddings = tfidf_matrix.toarray().tolist()
+                embeddings = embeddings_list
                 embedding_dim = len(embeddings[0]) if embeddings else None
-                print(f"✅ Generated {len(embeddings)} embeddings using TF-IDF (dim={embedding_dim})")
-            except Exception as e2:
-                print(f"❌ TF-IDF also failed: {e2}")
-                return
+                print(f"✅ Generated {len(embeddings)} embeddings using sentence-transformers (dim={embedding_dim})")
+            except Exception as e:
+                print(f"⚠️ Sentence-transformers failed: {e}")
+                print("🔄 Falling back to TF-IDF...")
+                try:
+                    from sklearn.feature_extraction.text import TfidfVectorizer
+                    vectorizer = TfidfVectorizer(
+                        max_features=1000,
+                        stop_words='english',
+                        ngram_range=(1, 2)
+                    )
+                    tfidf_matrix = vectorizer.fit_transform(chunk_texts)
+                    embeddings = tfidf_matrix.toarray().tolist()
+                    embedding_dim = len(embeddings[0]) if embeddings else None
+                    print(f"✅ Generated {len(embeddings)} embeddings using TF-IDF (dim={embedding_dim})")
+                except Exception as e2:
+                    print(f"❌ TF-IDF also failed: {e2}")
+                    return
         
         if embeddings is None or len(embeddings) == 0:
             print("❌ No embeddings generated!")

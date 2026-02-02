@@ -33,7 +33,7 @@ class OpenAISemanticRetriever:
         self.embedding_gen = embedding_gen
         self.faiss_index = faiss_index
         self.chunk_metadata = chunk_metadata
-        self.embedding_dimension = embedding_gen.dimension if hasattr(embedding_gen, 'dimension') else 1536
+        self.embedding_dimension = embedding_gen.dimension if hasattr(embedding_gen, 'dimension') else 3072
         
         logger.info(f"✅ OpenAI Semantic Retriever initialized (dimension: {self.embedding_dimension})")
     

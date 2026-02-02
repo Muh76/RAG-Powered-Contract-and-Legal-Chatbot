@@ -322,7 +322,7 @@ source venv/bin/activate
 
 ### FAISS Index Requirements
 - FAISS index must exist (created during data ingestion)
-- Index dimension must match embedding dimension (384)
+- Index dimension must match embedding dimension (3072 for text-embedding-3-large)
 - Index must use IndexFlatIP with normalized embeddings
 
 ### Performance Considerations

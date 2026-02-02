@@ -37,14 +37,15 @@ class Settings(BaseSettings):
     # OpenAI Configuration
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_MODEL: str = "gpt-4-turbo-preview"
-    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"  # Default: fast and cheap
+    # Single embedding model for the system. Must match EMBEDDING_DIMENSION (3072).
+    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-large"
     
     # Embedding Configuration
     # Primary: Use OpenAI embeddings (no PyTorch required - eliminates segfaults!)
     USE_OPENAI_EMBEDDINGS: bool = True  # Set to False to use sentence-transformers (PyTorch)
     # Disable local (SentenceTransformer/PyTorch) embeddings in chat path; use OpenAI or TF-IDF fallback. Default True in dev to avoid segfaults.
     DISABLE_LOCAL_EMBEDDINGS: bool = True
-    # EMBEDDING_MODEL and EMBEDDING_DIMENSION must be aligned. FAISS index dimension must match EMBEDDING_DIMENSION.
+    # Single embedding model and dimension. FAISS index dimension must match EMBEDDING_DIMENSION.
     EMBEDDING_MODEL: str = "text-embedding-3-large"
     EMBEDDING_DIMENSION: int = 3072  # text-embedding-3-large outputs 3072D
     EMBEDDING_BATCH_SIZE: int = 32
@@ -122,3 +123,24 @@ class Settings(BaseSettings):
 
 # Create settings instance
 settings = Settings()
+
+
+def _validate_embedding_config() -> None:
+    """Validate embedding model and dimension at startup. Raise RuntimeError on mismatch."""
+    expected_model = "text-embedding-3-large"
+    expected_dim = 3072
+    if settings.OPENAI_EMBEDDING_MODEL != expected_model:
+        raise RuntimeError(
+            f"Embedding model mismatch: expected '{expected_model}', got '{settings.OPENAI_EMBEDDING_MODEL}'. "
+            "Set OPENAI_EMBEDDING_MODEL=text-embedding-3-large in .env"
+        )
+    if settings.EMBEDDING_MODEL != expected_model:
+        raise RuntimeError(
+            f"Embedding model mismatch: expected '{expected_model}', got '{settings.EMBEDDING_MODEL}'. "
+            "Set EMBEDDING_MODEL=text-embedding-3-large in .env"
+        )
+    if settings.EMBEDDING_DIMENSION != expected_dim:
+        raise RuntimeError(
+            f"Embedding dimension mismatch: expected {expected_dim}, got {settings.EMBEDDING_DIMENSION}. "
+            "Set EMBEDDING_DIMENSION=3072 in .env"
+        )

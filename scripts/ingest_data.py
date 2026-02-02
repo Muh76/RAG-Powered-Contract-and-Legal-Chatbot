@@ -19,7 +19,7 @@ sys.path.insert(0, str(project_root))
 from ingestion.loaders.document_loaders import DocumentLoaderFactory
 from ingestion.chunkers.document_chunker import ChunkingStrategy, ChunkingConfig
 from retrieval.embeddings.openai_embedding_generator import OpenAIEmbeddingGenerator, OpenAIEmbeddingConfig
-from app.core.config import settings
+from app.core.config import settings, _validate_embedding_config
 
 # Logging: clear ingestion steps (console + optional file)
 logging.basicConfig(
@@ -128,6 +128,7 @@ def ingest_data() -> None:
     - Logs each ingestion step clearly.
     """
     logger.info("Starting data ingestion (incremental; existing corpora preserved).")
+    _validate_embedding_config()
     print("=" * 60)
     print("Data ingestion — incremental mode")
     print("=" * 60)
@@ -241,8 +242,8 @@ def ingest_data() -> None:
             raise ValueError("OPENAI_API_KEY not set. Set it in environment or .env.")
         embedding_config = OpenAIEmbeddingConfig(
             api_key=api_key,
-            model=getattr(settings, "OPENAI_EMBEDDING_MODEL", None) or "text-embedding-3-small",
-            dimension=None,
+            model=settings.OPENAI_EMBEDDING_MODEL,
+            dimension=settings.EMBEDDING_DIMENSION,
             batch_size=50,
             max_retries=5,
             timeout=60,

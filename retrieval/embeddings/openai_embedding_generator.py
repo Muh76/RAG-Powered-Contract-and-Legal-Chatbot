@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 class OpenAIEmbeddingConfig:
     """Configuration for OpenAI embeddings"""
     api_key: str
-    model: str = "text-embedding-3-small"  # Default: fast and cheap
-    dimension: Optional[int] = None  # None = use model default
+    model: str = "text-embedding-3-large"
+    dimension: Optional[int] = 3072  # text-embedding-3-large outputs 3072D
     batch_size: int = 50  # Smaller batches to avoid rate limits
     max_retries: int = 5  # More retries for network issues
     timeout: int = 60  # Longer timeout for large batches
@@ -53,13 +53,13 @@ class OpenAIEmbeddingGenerator:
     
     def get_embedding_dimension(self) -> int:
         """Return embedding dimension for compatibility with DocumentService and search."""
-        return self.config.dimension or 1536
+        return self.config.dimension or 3072
     
     def generate_embedding(self, text: str) -> List[float]:
         """Generate embedding for a single text using OpenAI API"""
         if not text or not text.strip():
             logger.warning("Empty text provided for embedding")
-            return [0.0] * (self.dimension or 1536)  # Default dimension
+            return [0.0] * (self.dimension or 3072)
         
         try:
             embeddings = self.generate_embeddings_batch([text])
@@ -79,7 +79,7 @@ class OpenAIEmbeddingGenerator:
         
         if not valid_indices:
             logger.warning("No valid texts provided for embedding")
-            default_dim = self.dimension or 1536
+            default_dim = self.dimension or 3072
             return [[0.0] * default_dim for _ in texts]
         
         # Prepare request with better SSL handling
@@ -219,7 +219,7 @@ class OpenAIEmbeddingGenerator:
                 time.sleep(max(min_delay, 3.0))
         
         # Fill in None values with zero vectors (for empty texts)
-        default_dim = self.dimension or 1536
+        default_dim = self.dimension or 3072
         for i, emb in enumerate(all_embeddings):
             if emb is None:
                 all_embeddings[i] = [0.0] * default_dim

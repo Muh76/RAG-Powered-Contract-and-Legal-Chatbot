@@ -9,7 +9,7 @@ import os
 from contextlib import asynccontextmanager
 import logging
 
-from app.core.config import settings
+from app.core.config import settings, _validate_embedding_config
 from app.api.routes import chat, health, documents
 from app.core.logging import setup_logging
 
@@ -21,6 +21,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
     setup_logging()
+    _validate_embedding_config()
     from app.api.routes import chat as chat_routes
     chat_routes.init_chat_services()
     logger.info("✅ Application startup complete (RAG and Guardrails initialized)")

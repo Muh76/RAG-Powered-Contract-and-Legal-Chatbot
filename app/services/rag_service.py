@@ -70,7 +70,7 @@ class RAGService:
             logger.error(f"Failed to load FAISS index: {e}")
             self.faiss_index = None
             self.chunk_metadata = []
-            # Continue anyway - can use TF-IDF fallback
+            # No FAISS: TF-IDF-only mode allowed (metadata exists)
         
         # Step 2: Initialize embedding generator (for semantic search in hybrid mode)
         # When DISABLE_LOCAL_EMBEDDINGS=True and OpenAI API key present: use OpenAI + FAISS for semantic retrieval
@@ -107,8 +107,8 @@ class RAGService:
                         # Initialize OpenAI embedding generator
                         embedding_config = OpenAIEmbeddingConfig(
                             api_key=api_key,
-                            model=settings.OPENAI_EMBEDDING_MODEL if hasattr(settings, 'OPENAI_EMBEDDING_MODEL') else "text-embedding-3-small",
-                            dimension=settings.EMBEDDING_DIMENSION if settings.EMBEDDING_DIMENSION else None
+                            model=settings.OPENAI_EMBEDDING_MODEL,
+                            dimension=settings.EMBEDDING_DIMENSION
                         )
 
                         self.embedding_gen = OpenAIEmbeddingGenerator(embedding_config)
@@ -175,19 +175,28 @@ class RAGService:
             logger.info("✅ System will use TF-IDF keyword search (stable fallback)")
             self.embedding_gen = None
         
-        # Step 3: Initialize hybrid retriever with BM25 + TF-IDF (NO PyTorch!)
+        # Step 3: Initialize hybrid retriever (BM25 + OpenAI + FAISS when FAISS exists)
         if self.use_hybrid and self.chunk_metadata:
             try:
                 self._initialize_hybrid_retriever()
+            except RuntimeError:
+                raise  # Fail-fast: FAISS exists but cannot be used
             except Exception as e:
                 logger.warning(f"Failed to initialize hybrid retriever: {e}")
                 self.hybrid_retriever = None
         
+        # Fail-fast: FAISS exists but embeddings unavailable - no TF-IDF fallback
+        if self.faiss_index is not None and self.embedding_gen is None:
+            raise RuntimeError(
+                "FAISS index exists but embeddings are unavailable (OPENAI_API_KEY missing or invalid). "
+                "TF-IDF fallback is disabled when FAISS exists. Set OPENAI_API_KEY or remove data/faiss_index.bin to use TF-IDF-only mode."
+            )
+        
         # Final status check
         if self.embedding_gen is None and self.faiss_index is None:
-            logger.warning("⚠️ RAG service initialized in degraded mode (no embeddings, no FAISS index)")
-        elif self.embedding_gen is None:
-            logger.warning("⚠️ RAG service initialized with FAISS but no embeddings (will use TF-IDF fallback)")
+            logger.warning("⚠️ RAG service initialized in TF-IDF-only mode (no FAISS, no embeddings)")
+        elif self.hybrid_retriever is not None:
+            logger.info("Hybrid retrieval active: BM25 + OpenAI + FAISS")
         else:
             logger.info("✅ RAG service fully initialized")
     
@@ -267,18 +276,21 @@ class RAGService:
                     logger.warning("Embedding generator available but model is None")
                     semantic_retriever = None
             
-            # Fallback to TF-IDF ONLY if embeddings truly failed
+            # TF-IDF fallback disabled when FAISS exists - raise instead of degrading
             if semantic_retriever is None:
-                logger.warning("⚠️⚠️⚠️ SEMANTIC EMBEDDINGS NOT AVAILABLE!")
-                logger.warning("⚠️ This means NO TRUE HYBRID SEARCH - only BM25 + TF-IDF (keyword-based)")
-                logger.warning("⚠️ Trying to initialize TF-IDF as fallback...")
+                if self.faiss_index is not None:
+                    raise RuntimeError(
+                        "FAISS index exists but semantic retriever (OpenAI+FAISS) could not be initialized. "
+                        "TF-IDF fallback is disabled when FAISS exists. Fix OPENAI_API_KEY or embedding config."
+                    )
+                # No FAISS: allow TF-IDF for hybrid (BM25 + TF-IDF)
+                logger.warning("⚠️ No FAISS index; using TF-IDF as semantic component (BM25 + TF-IDF)")
                 try:
                     from retrieval.tfidf_retriever import TFIDFRetriever
                     tfidf_retriever = TFIDFRetriever(self.chunk_metadata)
                     if tfidf_retriever.is_ready():
-                        semantic_retriever = tfidf_retriever  # Use TF-IDF as fallback
-                        logger.warning("⚠️ Using TF-IDF fallback (BM25 + TF-IDF) - NOT TRUE HYBRID")
-                        logger.warning("⚠️ To get BM25 + EMBEDDINGS, fix embedding initialization!")
+                        semantic_retriever = tfidf_retriever
+                        logger.info("Retrievers active: BM25 + TF-IDF (no FAISS)")
                     else:
                         logger.error("❌ TF-IDF retriever not ready, hybrid search disabled")
                         self.hybrid_retriever = None
@@ -304,13 +316,13 @@ class RAGService:
                 enable_reranking=False  # Disable reranking (optional PyTorch feature)
             )
             
-            # Check if we have true hybrid (BM25 + Embeddings) or degraded (BM25 + TF-IDF)
-            if semantic_retriever and hasattr(semantic_retriever, 'embedding_gen') and semantic_retriever.embedding_gen:
-                logger.info("✅✅✅ TRUE HYBRID SEARCH: BM25 + Semantic Embeddings (PROPER HYBRID!)")
+            # Log which retrievers are active
+            if semantic_retriever and hasattr(semantic_retriever, 'faiss_index') and semantic_retriever.faiss_index is not None:
+                logger.info("Hybrid retrieval active: BM25 + OpenAI + FAISS")
+            elif semantic_retriever and hasattr(semantic_retriever, 'embedding_gen') and semantic_retriever.embedding_gen:
+                logger.info("Hybrid retrieval active: BM25 + OpenAI + FAISS")
             elif semantic_retriever:
-                logger.warning("⚠️⚠️⚠️ DEGRADED: BM25 + TF-IDF only (keyword search, NOT true hybrid)")
-            else:
-                logger.error("❌❌❌ NO HYBRID: Failed to initialize hybrid retriever")
+                logger.info("Retrievers active: BM25 + TF-IDF (no FAISS)")
             
         except Exception as e:
             logger.error(f"Error initializing hybrid retriever: {e}", exc_info=True)
@@ -407,14 +419,17 @@ class RAGService:
             logger.info("📊 No FAISS index; using TF-IDF-only search over %s chunks", len(self.chunk_metadata))
         
         if use_hybrid_search and self.hybrid_retriever:
-            # Check if we have true hybrid (BM25 + Embeddings) or degraded (BM25 + TF-IDF)
             semantic_ret = self.hybrid_retriever.semantic_retriever if self.hybrid_retriever else None
-            is_true_hybrid = semantic_ret and hasattr(semantic_ret, 'embedding_gen') and semantic_ret.embedding_gen
-            retriever_type = "hybrid (BM25+embeddings)" if is_true_hybrid else "hybrid (BM25+TF-IDF)"
-            if is_true_hybrid:
-                logger.info("🔀 Using TRUE HYBRID search (BM25 + Embeddings, NO PyTorch!)")
+            uses_faiss = (
+                semantic_ret is not None
+                and hasattr(semantic_ret, "faiss_index")
+                and semantic_ret.faiss_index is not None
+            )
+            retriever_type = "hybrid (BM25+OpenAI+FAISS)" if uses_faiss else "hybrid (BM25+TF-IDF)"
+            if uses_faiss:
+                logger.info("Retrievers active: BM25 + OpenAI + FAISS")
             else:
-                logger.info("🔀 Using hybrid search (BM25 + TF-IDF, keyword-based)")
+                logger.info("Retrievers active: BM25 + TF-IDF (no FAISS)")
             public_results = self._hybrid_search(query, top_k, fusion_strategy, metadata_filter)
         else:
             has_emb = (
@@ -423,8 +438,11 @@ class RAGService:
                 and self.embedding_gen.model is not None
                 and self.faiss_index is not None
             )
-            retriever_type = "FAISS" if has_emb else "TF-IDF"
-            logger.info("🔎 Using TF-IDF search")
+            retriever_type = "FAISS (OpenAI+FAISS)" if has_emb else "TF-IDF"
+            if has_emb:
+                logger.info("Retrievers active: OpenAI + FAISS")
+            else:
+                logger.info("Retrievers active: TF-IDF only (no FAISS)")
             public_results = self._semantic_search(query, top_k)
         
         logger.info(f"📋 Public corpus returned {len(public_results)} results")
@@ -726,11 +744,9 @@ class RAGService:
             return []
     
     def _semantic_search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
-        """Semantic search using embeddings (with TF-IDF fallback)"""
-        # Try to use embeddings if available
-        embedding_gen = self.embedding_gen  # Use already initialized embedding_gen
+        """Semantic search using embeddings. TF-IDF fallback only when FAISS does not exist."""
+        embedding_gen = self.embedding_gen
         
-        # Check if we have a valid embedding generator (works for both OpenAI and PyTorch)
         has_valid_embeddings = (
             embedding_gen is not None and 
             hasattr(embedding_gen, 'model') and 
@@ -739,24 +755,22 @@ class RAGService:
         )
         
         if has_valid_embeddings:
-            # Use semantic embeddings (FAISS) - OpenAI or PyTorch
-            is_openai = (
-                hasattr(embedding_gen, "config")
-                and hasattr(embedding_gen.config, "api_key")
-                and embedding_gen.config.api_key
-            )
-            if is_openai:
-                logger.info("Semantic retriever: OpenAI + FAISS")
-            else:
-                logger.info("Using semantic embeddings search")
+            logger.info("Semantic retriever: OpenAI + FAISS")
             try:
                 return self._search_with_embeddings(query, top_k, embedding_gen)
             except Exception as e:
-                logger.warning(f"Semantic search failed: {e}, falling back to TF-IDF")
-                return self._search_with_tfidf(query, top_k)
+                # FAISS exists: raise instead of TF-IDF fallback
+                raise RuntimeError(
+                    f"FAISS search failed: {e}. TF-IDF fallback is disabled when FAISS exists."
+                ) from e
+        elif self.faiss_index is not None:
+            # FAISS exists but embeddings unavailable - should not reach here (caught at startup)
+            raise RuntimeError(
+                "FAISS exists but embeddings unavailable. TF-IDF fallback disabled."
+            )
         else:
-            # Fallback to TF-IDF
-            logger.info("Using TF-IDF keyword search (no embeddings available)")
+            # No FAISS: TF-IDF-only mode allowed
+            logger.info("Retrievers active: TF-IDF only (no FAISS)")
             return self._search_with_tfidf(query, top_k)
         
         # REMOVED: All PyTorch embedding code to prevent segfaults

@@ -13,7 +13,7 @@ The Legal Chatbot is a production-oriented RAG (retrieval-augmented generation) 
 - **Backend:** FastAPI (Python). REST API for health, chat, hybrid search, agentic chat, documents, auth, and metrics.
 - **RAG pipeline:** Custom (no LangChain). Hybrid retrieval: BM25 + FAISS (OpenAI embeddings), fused with reciprocal rank fusion (RRF). Optional cross-encoder reranking and explainability (matched terms, highlighting).
 - **Vector store:** FAISS (index and chunk metadata persisted under `data/`; RAG prefers `data/indices/faiss_index.pkl`).
-- **LLM & embeddings:** OpenAI API (configurable model; e.g. text-embedding-3-small for embeddings).
+- **LLM & embeddings:** OpenAI API (text-embedding-3-large, 3072D).
 - **Auth & data:** JWT + OAuth2 (Google, GitHub, Microsoft). RBAC (Public, Solicitor, Admin). PostgreSQL with Alembic migrations; user and document tables.
 - **Document ingestion:** Loaders for TXT, JSON (UK legislation), Parquet (CUAD). Chunking with overlap; incremental ingestion script that preserves existing embeddings and is idempotent by chunk_id.
 - **Frontend:** Streamlit. Login/register, OAuth, protected routes, role-based UI, document management for Solicitor/Admin.
