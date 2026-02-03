@@ -208,43 +208,77 @@ EXAMPLE BAD RESPONSE (DO NOT DO THIS):
 "[1, Section 1]" <- Wrong format, use [1] only!
 "Employment rights include..." <- No citation = FORBIDDEN!"""
         
-        # --- FINAL messages ARRAY sent to OpenAI Chat Completions API ---
-        # Exactly 2 messages: system (instructions) + user (sources + question)
-        # No chat history; no assistant messages. Single-turn completion.
+        # --- Citation retry loop: initial call + up to 2 repair attempts ---
+        max_attempts = 3  # 1 initial + 2 repair
+        answer = ""
+        citation_validation: Dict[str, Any] = {}
+        refusal_message = "I cannot answer this question because I cannot provide properly cited legal sources."
+
         try:
-            logger.info(f"🔄 Calling OpenAI API: model={self.model_name}, max_tokens={self.max_tokens}, prompt_length={len(user_prompt)}")
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
-                timeout=60.0
-            )
-            logger.info(f"✅ OpenAI API call successful: response_id={response.id if hasattr(response, 'id') else 'N/A'}")
-            
-            if not response.choices or len(response.choices) == 0:
-                logger.error("❌ OpenAI API returned empty response - no choices available")
-                raise ValueError("OpenAI API returned empty response - no choices available")
-            
-            answer = response.choices[0].message.content
-            
-            if not answer:
-                logger.error(f"❌ OpenAI API returned empty answer content. Response object: {type(response).__name__}, choices count: {len(response.choices) if response.choices else 0}")
-                raise ValueError("OpenAI API returned empty answer content")
-            
-            logger.info(f"✅ LLM generated answer successfully (length: {len(answer)} chars)")
-            
-            # Validate citations in the answer
-            citation_validation = self._validate_citations(answer, len(citations))
-            
-            # Deterministic validation: every sentence must end with citation(s) like [1] or [1][2]
-            if not self._every_sentence_ends_with_citation(answer):
-                answer = "I cannot answer because I cannot provide properly cited legal sources."
-                logger.warning("Citation validation failed: at least one sentence does not end with [n]")
-            
+            for attempt in range(1, max_attempts + 1):
+                if attempt == 1:
+                    # Initial call: system + user prompt (sources + question)
+                    messages = [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ]
+                    logger.info(f"🔄 Calling OpenAI API: model={self.model_name}, max_tokens={self.max_tokens}, prompt_length={len(user_prompt)}")
+                else:
+                    # Repair call: stricter prompt with original answer + sources + instructions
+                    repair_system = "You are a legal editor. Rewrite the given answer so every sentence ends with citations [n] from the provided sources. Do not add new claims. Output only the rewritten answer."
+                    repair_user = f"""The following answer does not comply with citation rules (every sentence must end with [1], [2], etc. from the sources).
+
+SOURCES (numbered [1], [2], etc.):
+{context}
+
+ORIGINAL ANSWER (rewrite so every sentence ends with [n] from sources above; no new claims):
+---
+{answer}
+---
+
+TASK: Rewrite the answer so every sentence ends with citations [n] from the sources above. Do not add new claims. Use only information from the sources. Output only the rewritten answer."""
+
+                    messages = [
+                        {"role": "system", "content": repair_system},
+                        {"role": "user", "content": repair_user}
+                    ]
+                    logger.info(f"🔄 CITATION_RETRY repair call: attempt={attempt}, prompt_length={len(repair_user)}")
+
+                response = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages,
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature,
+                    timeout=60.0
+                )
+                logger.info(f"✅ OpenAI API call successful: response_id={response.id if hasattr(response, 'id') else 'N/A'}")
+
+                if not response.choices or len(response.choices) == 0:
+                    logger.error("❌ OpenAI API returned empty response - no choices available")
+                    raise ValueError("OpenAI API returned empty response - no choices available")
+
+                answer = response.choices[0].message.content
+
+                if not answer:
+                    logger.error(f"❌ OpenAI API returned empty answer content. Response object: {type(response).__name__}, choices count: {len(response.choices) if response.choices else 0}")
+                    raise ValueError("OpenAI API returned empty answer content")
+
+                # Validate citations using _validate_citations and sentence-end check
+                citation_validation = self._validate_citations(answer, len(citations))
+                has_valid_citations = citation_validation.get("valid_citations", False) and citation_validation.get("has_citations", False)
+                every_sentence_cited = self._every_sentence_ends_with_citation(answer)
+                valid = has_valid_citations and every_sentence_cited
+
+                logger.info(f"CITATION_RETRY attempt={attempt}/{max_attempts} valid={valid}")
+
+                if valid:
+                    logger.info(f"✅ LLM generated answer successfully (length: {len(answer)} chars)")
+                    break
+
+                if attempt == max_attempts:
+                    answer = refusal_message
+                    logger.warning("Citation validation failed after all retries; returning refusal message")
+
             return {
                 "answer": answer,
                 "citations": citations,
