@@ -63,7 +63,7 @@ app.add_middleware(ErrorTrackingMiddleware)
 app.add_middleware(RequestResponseLoggingMiddleware)
 
 # Include routers
-from app.api.routes import health, chat, documents, search, agentic_chat, metrics, auth
+from app.api.routes import health, chat, documents, search, agentic_chat, metrics, auth, debug
 
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(auth.router, prefix="/api/v1", tags=["authentication"])
@@ -72,6 +72,7 @@ app.include_router(documents.router, prefix="/api/v1", tags=["documents"])
 app.include_router(search.router, prefix="/api/v1", tags=["search"])
 app.include_router(agentic_chat.router, prefix="/api/v1", tags=["agentic-chat"])
 app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
+app.include_router(debug.router, prefix="/api/v1")
 
 
 @app.get("/")
