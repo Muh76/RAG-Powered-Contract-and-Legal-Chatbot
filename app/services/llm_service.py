@@ -176,7 +176,8 @@ If the question is not about law or legal matters, respond briefly that you only
 
 REQUIRED OUTPUT FORMAT (STRICT):
 - Each sentence must be on its own line.
-- Each sentence must end with citations like [1], [2].
+- Each sentence MUST end EXACTLY with citation tokens like [1] or [1][2].
+- Citation tokens must be the final characters in the sentence - nothing may appear after them.
 - Example:
   Goods must be of satisfactory quality under UK law [1].
   Consumers may request repair or replacement for faulty goods [2].
@@ -188,9 +189,10 @@ QUESTION: {query}
 STRICT ANTI-HALLUCINATION INSTRUCTIONS:
 1. Answer using ONLY the exact information from the numbered sources above - NEVER add information from your training data
 2. Your answer MUST be shorter or equal to the total length of the sources - if sources are 3 paragraphs, answer should be 3 paragraphs or less
-3. Cite EVERY sentence with simple [source_id] format ONLY:
+3. Cite EVERY sentence with simple [source_id] format ONLY. Citations MUST be the final characters - nothing after [1], [2], etc.:
    - CORRECT: "Employers must provide written statements [1]."
-   - CORRECT: "The Employment Rights Act, Section 1 [1] requires..."
+   - CORRECT: "The Employment Rights Act 1996, Section 1 requires written statements [1]."
+   - WRONG: "The Act [1] requires..." (citation in middle - must be at end)
    - WRONG: "[1, Section 1]" or "[3, Sections 17-22]" - ONLY use [1], [2], etc.
 4. DO NOT make any claims without citations - this will cause rejection
 5. If a source explicitly mentions an Act name and Section number, you may include it: "Employment Rights Act 1996, Section 1 [1]"
@@ -199,7 +201,7 @@ STRICT ANTI-HALLUCINATION INSTRUCTIONS:
 8. DO NOT expand on topics not covered in the sources - keep your answer proportional to source material
 
 EXAMPLE GOOD RESPONSE (when sources are short):
-"The Employment Rights Act 1996, Section 1 [1] requires employers to provide written statements [1]."
+"The Employment Rights Act 1996, Section 1 requires employers to provide written statements [1]."
 
 EXAMPLE BAD RESPONSE (DO NOT DO THIS):
 "Employment rights include many provisions such as written statements, wage protection, leave rights, etc. [1]" <- This adds information not in sources!
