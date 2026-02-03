@@ -174,6 +174,15 @@ If the question is not about law or legal matters, respond briefly that you only
         user_prompt = f"""SOURCES (numbered [1], [2], etc.):
 {context}
 
+REQUIRED OUTPUT FORMAT (STRICT):
+- Each sentence must be on its own line.
+- Each sentence must end with citations like [1], [2].
+- Example:
+  Goods must be of satisfactory quality under UK law [1].
+  Consumers may request repair or replacement for faulty goods [2].
+
+Any response not following this format must be refused.
+
 QUESTION: {query}
 
 STRICT ANTI-HALLUCINATION INSTRUCTIONS:
