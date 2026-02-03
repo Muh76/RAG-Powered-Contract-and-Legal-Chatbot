@@ -123,11 +123,7 @@ MANDATORY CITATION ENFORCEMENT (NON-NEGOTIABLE):
 - If the model cannot cite a sentence, it MUST refuse to answer.
 - Citations must be placed at the END of each sentence.
 
-If the question is not about law or legal matters, respond briefly that you only answer legal questions and suggest rephrasing as a legal query.
-
-FINAL SELF-VERIFICATION (before producing your answer):
-Before producing the final answer, internally verify: "Does EVERY sentence include at least one citation [n]?"
-If the answer is NO, you MUST refuse with: "I cannot answer because I cannot provide properly cited legal sources.""""
+If the question is not about law or legal matters, respond briefly that you only answer legal questions and suggest rephrasing as a legal query."""
         else:  # public mode
             system_prompt = """You are a legal assistant helping the general public understand UK law.
 
@@ -170,11 +166,7 @@ MANDATORY CITATION ENFORCEMENT (NON-NEGOTIABLE):
 - If the model cannot cite a sentence, it MUST refuse to answer.
 - Citations must be placed at the END of each sentence.
 
-If the question is not about law or legal matters, respond briefly that you only answer legal questions and suggest rephrasing as a legal query.
-
-FINAL SELF-VERIFICATION (before producing your answer):
-Before producing the final answer, internally verify: "Does EVERY sentence include at least one citation [n]?"
-If the answer is NO, you MUST refuse with: "I cannot answer because I cannot provide properly cited legal sources.""""
+If the question is not about law or legal matters, respond briefly that you only answer legal questions and suggest rephrasing as a legal query."""
         
         # --- USER PROMPT: SOURCES (retrieved chunks) + QUESTION + instructions ---
         # {context} = injected retrieved chunks, formatted as "[1] Title\ntext", "[2] Title\ntext", ...
