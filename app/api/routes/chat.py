@@ -553,7 +553,13 @@ async def chat(
                             response_mode=response_mode
                         )
             
-            # Use generate_legal_answer for proper mode-based responses with citations
+            # --- LLM CALL: constructs messages and sends to OpenAI Chat Completions API ---
+            # retrieval_result = list of chunk dicts from RAG (rag.search)
+            # llm.generate_legal_answer() in app/services/llm_service.py:
+            #   - Builds context from retrieved_chunks (injection point)
+            #   - Selects system_prompt by mode (solicitor/public)
+            #   - Builds user_prompt with SOURCES + QUESTION
+            #   - Calls client.chat.completions.create(messages=[{system}, {user}])
             loop = asyncio.get_event_loop()
             logger.info("CHAT_STAGE request_id=%s stage=llm_call_start", request_id)
             logger.info(f"🔄 Calling LLM service with query length: {len(request.query)}, chunks: {len(retrieval_result)}, mode: {response_mode}")

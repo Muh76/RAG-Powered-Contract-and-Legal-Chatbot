@@ -1,5 +1,12 @@
 # Legal Chatbot - LLM Generation Service
 # Extracted from Phase 1 notebook
+#
+# CODE PATH FOR /api/v1/chat -> OpenAI Chat Completions API:
+# 1. app/api/routes/chat.py: chat() endpoint receives request
+# 2. Retrieval: rag.search() returns retrieval_result (list of chunk dicts)
+# 3. chat.py line 564: llm.generate_legal_answer(query, retrieved_chunks=retrieval_result, mode)
+# 4. THIS FILE: LLMService.generate_legal_answer() constructs messages and calls OpenAI
+# 5. OpenAI call: self.client.chat.completions.create(messages=[...]) at line ~175
 
 import os
 import sys
@@ -37,8 +44,10 @@ class LLMService:
         retrieved_chunks: List[Dict],
         mode: str = "solicitor"
     ) -> Dict[str, Any]:
-        """Generate a legal answer with citations based on retrieved chunks"""
-        # Prepare context from retrieved chunks with source IDs
+        """Generate a legal answer with citations based on retrieved chunks.
+        This is the ONLY function that calls openai.chat.completions.create for /api/v1/chat."""
+        # --- INJECTION POINT: retrieved chunks -> context ---
+        # Each chunk becomes "[N] Title - Section\nchunk_text"; joined with "\n\n"
         context_parts = []
         citations = []
         
@@ -67,8 +76,10 @@ class LLMService:
                 "text_snippet": chunk_text[:200] + "..." if len(chunk_text) > 200 else chunk_text
             })
         
-        context = "\n\n".join(context_parts)
+        context = "\n\n".join(context_parts)  # Injected into user_prompt below
         
+        # --- SYSTEM PROMPT: role instructions, citation rules, refusal language ---
+        # Chosen by mode (solicitor vs public). No chunks injected here.
         # Choose prompt template based on mode with STRICT source-only enforcement
         if mode == "solicitor":
             system_prompt = """You are a legal assistant specializing in UK law.
@@ -104,6 +115,13 @@ CRITICAL ANTI-HALLUCINATION RULES:
 - Use simple [N] format ONLY - NO complex formats like [3, Section X]
 - Include Act name and Section number when explicitly mentioned in source metadata
 - DO NOT create fictional sections, Act names, or legal provisions
+
+MANDATORY CITATION ENFORCEMENT (NON-NEGOTIABLE):
+- Every sentence MUST end with one or more citations like [1], [2].
+- No sentence may appear without citations.
+- Citations must reference the numbered SOURCES provided in the user prompt.
+- If the model cannot cite a sentence, it MUST refuse to answer.
+- Citations must be placed at the END of each sentence.
 
 If the question is not about law or legal matters, respond briefly that you only answer legal questions and suggest rephrasing as a legal query."""
         else:  # public mode
@@ -141,8 +159,18 @@ CRITICAL ANTI-HALLUCINATION RULES:
 - Include Act name and Section number when explicitly mentioned in source metadata
 - DO NOT create fictional sections, Act names, or legal provisions
 
+MANDATORY CITATION ENFORCEMENT (NON-NEGOTIABLE):
+- Every sentence MUST end with one or more citations like [1], [2].
+- No sentence may appear without citations.
+- Citations must reference the numbered SOURCES provided in the user prompt.
+- If the model cannot cite a sentence, it MUST refuse to answer.
+- Citations must be placed at the END of each sentence.
+
 If the question is not about law or legal matters, respond briefly that you only answer legal questions and suggest rephrasing as a legal query."""
         
+        # --- USER PROMPT: SOURCES (retrieved chunks) + QUESTION + instructions ---
+        # {context} = injected retrieved chunks, formatted as "[1] Title\ntext", "[2] Title\ntext", ...
+        # {query} = user's question from request.query
         user_prompt = f"""SOURCES (numbered [1], [2], etc.):
 {context}
 
@@ -169,6 +197,9 @@ EXAMPLE BAD RESPONSE (DO NOT DO THIS):
 "[1, Section 1]" <- Wrong format, use [1] only!
 "Employment rights include..." <- No citation = FORBIDDEN!"""
         
+        # --- FINAL messages ARRAY sent to OpenAI Chat Completions API ---
+        # Exactly 2 messages: system (instructions) + user (sources + question)
+        # No chat history; no assistant messages. Single-turn completion.
         try:
             logger.info(f"🔄 Calling OpenAI API: model={self.model_name}, max_tokens={self.max_tokens}, prompt_length={len(user_prompt)}")
             response = self.client.chat.completions.create(
