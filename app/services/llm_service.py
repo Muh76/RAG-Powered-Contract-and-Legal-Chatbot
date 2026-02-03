@@ -240,6 +240,11 @@ EXAMPLE BAD RESPONSE (DO NOT DO THIS):
             # Validate citations in the answer
             citation_validation = self._validate_citations(answer, len(citations))
             
+            # Deterministic validation: every sentence must end with citation(s) like [1] or [1][2]
+            if not self._every_sentence_ends_with_citation(answer):
+                answer = "I cannot answer because I cannot provide properly cited legal sources."
+                logger.warning("Citation validation failed: at least one sentence does not end with [n]")
+            
             return {
                 "answer": answer,
                 "citations": citations,
@@ -301,3 +306,12 @@ EXAMPLE BAD RESPONSE (DO NOT DO THIS):
             "valid_citation_numbers": valid_citations,
             "message": f"Found {len(found_citations)} citations, {len(valid_citations)} valid"
         }
+    
+    def _every_sentence_ends_with_citation(self, answer: str) -> bool:
+        """Check that every sentence ends with citation(s) like [1] or [1][2]."""
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', answer) if s.strip()]
+        citation_end_pattern = re.compile(r'(?:\[\d+\])+[.!?]*$')  # ends with [1], [1][2], or [1].
+        for sentence in sentences:
+            if not citation_end_pattern.search(sentence):
+                return False
+        return True
