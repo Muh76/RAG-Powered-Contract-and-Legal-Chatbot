@@ -71,6 +71,12 @@ st.markdown("""
     .stWarning { background-color: #fffbeb !important; border-radius: 8px; }
     /* Caption text */
     .stCaptionContainer { color: #64748b; font-size: 0.85rem; }
+    /* Citation badges */
+    .cite-badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; background: #1e293b; color: #fff; margin-right: 0.5rem; }
+    .cite-badge-green { background: #059669; color: #fff; }
+    .source-title { font-weight: 600; color: #1e293b; font-size: 0.95rem; }
+    .source-meta { color: #64748b; font-size: 0.85rem; margin-top: 0.25rem; }
+    .source-snippet-label { font-size: 0.8rem; color: #64748b; margin-top: 0.5rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -160,55 +166,65 @@ class LegalChatbotUI:
             }
     
     def display_citations(self, citations: list):
-        """Display citations in an expandable format"""
+        """Display citations in an expandable format — presentation only, no logic changes"""
         if not citations:
             st.info("No citations available")
             return
         
-        st.markdown("<div class='citations-spacer'></div>", unsafe_allow_html=True)
-        st.subheader("Sources & Citations")
+        n = len(citations)
+        cited_badge = '<span class="cite-badge cite-badge-green">Cited</span>'
         
-        for i, citation in enumerate(citations):
-            # Handle both old format (dict) and new format (Source object)
-            if isinstance(citation, dict):
-                citation_id = citation.get('chunk_id', citation.get('id', f"citation_{i}"))
-                title = citation.get('title', 'Unknown')
-                section = citation.get('section', citation.get('metadata', {}).get('section', 'Unknown'))
-                text_snippet = citation.get('text_snippet', citation.get('text', ''))
-                similarity_score = citation.get('similarity_score', 0.0)
-                url = citation.get('url')
-                metadata = citation.get('metadata', {})
-            else:
-                # Source object (Pydantic model)
-                citation_id = citation.chunk_id if hasattr(citation, 'chunk_id') else f"citation_{i}"
-                title = citation.title if hasattr(citation, 'title') else 'Unknown'
-                section = citation.metadata.get('section', 'Unknown') if hasattr(citation, 'metadata') else 'Unknown'
-                text_snippet = citation.text_snippet if hasattr(citation, 'text_snippet') else ''
-                similarity_score = citation.similarity_score if hasattr(citation, 'similarity_score') else 0.0
-                url = citation.url if hasattr(citation, 'url') else None
-                metadata = citation.metadata if hasattr(citation, 'metadata') else {}
-            
-            # Create expander title with section info
-            expander_title = f"Source [{citation_id}]"
-            if section and section != 'Unknown':
-                expander_title += f" - {section}"
-            
-            with st.expander(expander_title):
-                st.write(f"**Title:** {title}")
-                if section and section != 'Unknown':
-                    st.write(f"**Section:** {section}")
-                if url:
-                    st.write(f"**URL:** {url}")
-                st.write(f"**Similarity Score:** {similarity_score:.3f}")
-                st.write(f"**Text Snippet:**")
-                st.text(text_snippet[:500])  # Show first 500 chars
+        st.markdown("<div class='citations-spacer'></div>", unsafe_allow_html=True)
+        st.markdown(f"{cited_badge} This answer is grounded in the following sources.", unsafe_allow_html=True)
+        
+        with st.expander(f"Sources ({n})", expanded=False):
+            for i, citation in enumerate(citations):
+                # Handle both old format (dict) and new format (Source object)
+                if isinstance(citation, dict):
+                    citation_id = citation.get('chunk_id', citation.get('id', f"citation_{i}"))
+                    title = citation.get('title', 'Unknown')
+                    section = citation.get('section', citation.get('metadata', {}).get('section', 'Unknown'))
+                    text_snippet = citation.get('text_snippet', citation.get('text', ''))
+                    similarity_score = citation.get('similarity_score', 0.0)
+                    url = citation.get('url')
+                    metadata = citation.get('metadata', {})
+                else:
+                    citation_id = citation.chunk_id if hasattr(citation, 'chunk_id') else f"citation_{i}"
+                    title = citation.title if hasattr(citation, 'title') else 'Unknown'
+                    section = citation.metadata.get('section', 'Unknown') if hasattr(citation, 'metadata') else 'Unknown'
+                    text_snippet = citation.text_snippet if hasattr(citation, 'text_snippet') else ''
+                    similarity_score = citation.similarity_score if hasattr(citation, 'similarity_score') else 0.0
+                    url = citation.url if hasattr(citation, 'url') else None
+                    metadata = citation.metadata if hasattr(citation, 'metadata') else {}
                 
-                # Show additional metadata if available
-                if metadata:
-                    if metadata.get('corpus'):
-                        st.write(f"**Corpus:** {metadata['corpus']}")
-                    if metadata.get('jurisdiction'):
-                        st.write(f"**Jurisdiction:** {metadata['jurisdiction']}")
+                # Expander title: numbered badge [1], [2] + title, section if present
+                num = i + 1
+                expander_title = f"[{num}] {title}"
+                if section and section != 'Unknown':
+                    expander_title += f" — {section}"
+                
+                with st.expander(expander_title):
+                    col1, col2 = st.columns([2, 1])
+                    with col1:
+                        st.markdown(f"**{title}**")
+                        if section and section != 'Unknown':
+                            st.caption(f"Section: {section}")
+                    with col2:
+                        st.caption(f"Relevance: {similarity_score:.2f}")
+                        if url:
+                            st.caption(f"[Link]({url})")
+                    
+                    st.caption("Excerpt")
+                    st.text(text_snippet[:500])
+                    
+                    if metadata:
+                        meta_parts = []
+                        if metadata.get('corpus'):
+                            meta_parts.append(f"Corpus: {metadata['corpus']}")
+                        if metadata.get('jurisdiction'):
+                            meta_parts.append(f"Jurisdiction: {metadata['jurisdiction']}")
+                        if meta_parts:
+                            st.caption(" · ".join(meta_parts))
     
     def display_response_metadata(self, response: Dict[str, Any]):
         """Display response metadata and validation info"""
