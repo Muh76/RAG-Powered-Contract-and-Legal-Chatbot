@@ -24,6 +24,56 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Production SaaS styling: clean spacing, typography, chat bubbles
+st.markdown("""
+<style>
+    /* Main content spacing */
+    .block-container { padding-top: 2rem; padding-bottom: 3rem; max-width: 900px; }
+    /* Section headers */
+    h1 { font-size: 1.75rem !important; font-weight: 600 !important; color: #1e293b !important; margin-bottom: 0.5rem !important; }
+    h2 { font-size: 1.25rem !important; font-weight: 600 !important; color: #334155 !important; margin-top: 1.5rem !important; }
+    h3 { font-size: 1rem !important; font-weight: 600 !important; color: #475569 !important; }
+    /* Sidebar polish */
+    [data-testid="stSidebar"] { background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%); }
+    [data-testid="stSidebar"] .stMarkdown { font-size: 0.9rem; }
+    /* Section dividers */
+    hr { margin: 1.5rem 0 !important; border-color: #e2e8f0 !important; }
+    /* Chat message bubbles: spacing, borders, role distinction */
+    [data-testid="stChatMessage"] {
+        padding: 1rem 1.25rem !important;
+        margin-bottom: 1rem !important;
+        border-radius: 10px !important;
+        border: 1px solid #e2e8f0 !important;
+    }
+    /* User messages: light blue tint + slate accent */
+    [data-testid="stChatMessage"] { background: #f8fafc !important; border-left: 4px solid #94a3b8 !important; }
+    /* Assistant messages: warm neutral + stone accent (alternate with user) */
+    [data-testid="stChatMessage"]:nth-of-type(even) { background: #fafaf9 !important; border-left-color: #78716c !important; }
+    /* Citation section spacing */
+    .citations-spacer { margin-top: 1rem; display: block; }
+    /* Citation/expander blocks: accent line, warm background */
+    [data-testid="stChatMessage"] [data-testid="stExpander"] {
+        border: 1px solid #e7e5e4 !important;
+        border-left: 3px solid #78716c !important;
+        border-radius: 6px !important;
+        margin: 0.5rem 0 !important;
+        background: #fafaf9 !important;
+    }
+    /* Citation text snippet: monospace, smaller */
+    [data-testid="stChatMessage"] [data-testid="stExpander"] pre,
+    [data-testid="stChatMessage"] [data-testid="stExpander"] code { font-size: 0.8rem !important; font-family: ui-monospace, monospace !important; }
+    /* Chat input area */
+    [data-testid="stChatInput"] { padding: 0.8rem !important; }
+    /* Subtle success/error styling */
+    .stSuccess { background-color: #f0fdf4 !important; border-radius: 8px; }
+    .stError { background-color: #fef2f2 !important; border-radius: 8px; }
+    .stInfo { background-color: #f0f9ff !important; border-radius: 8px; }
+    .stWarning { background-color: #fffbeb !important; border-radius: 8px; }
+    /* Caption text */
+    .stCaptionContainer { color: #64748b; font-size: 0.85rem; }
+</style>
+""", unsafe_allow_html=True)
+
 class LegalChatbotUI:
     def __init__(self):
         self.api_base_url = "http://localhost:8000"
@@ -115,7 +165,8 @@ class LegalChatbotUI:
             st.info("No citations available")
             return
         
-        st.subheader("📚 Sources & Citations")
+        st.markdown("<div class='citations-spacer'></div>", unsafe_allow_html=True)
+        st.subheader("Sources & Citations")
         
         for i, citation in enumerate(citations):
             # Handle both old format (dict) and new format (Source object)
@@ -163,7 +214,7 @@ class LegalChatbotUI:
         """Display response metadata and validation info"""
         import re
         
-        with st.expander("🔍 Response Details"):
+        with st.expander("Response details"):
             col1, col2 = st.columns(2)
             
             # Extract citation count from answer text (count [1], [2], etc.)
@@ -238,12 +289,13 @@ class LegalChatbotUI:
     
     def render_sidebar(self):
         """Render the sidebar with controls and user profile"""
-        st.sidebar.title("⚖️ Legal Chatbot")
+        st.sidebar.title("Legal Chatbot")
+        st.sidebar.caption("UK Law · RAG-powered")
         
         # Check authentication first
         if not self.auth_ui.ensure_authenticated():
-            st.sidebar.info("🔐 Please login to continue")
-            if st.sidebar.button("Go to Login", use_container_width=True):
+            st.sidebar.info("Please sign in to continue")
+            if st.sidebar.button("Sign in", use_container_width=True):
                 self.session_state.current_page = "login"
                 st.rerun()
             return None, None
@@ -253,29 +305,29 @@ class LegalChatbotUI:
         
         # Navigation (Admin: list + role; Solicitor/Admin: documents)
         st.sidebar.markdown("---")
-        st.sidebar.subheader("🧭 Navigation")
-        nav_options = ["💬 Chat", "⚙️ Settings"]
+        st.sidebar.subheader("Navigation")
+        nav_options = ["Chat", "Settings"]
         if self.auth_ui.has_role("solicitor", "admin"):
-            nav_options.insert(1, "📄 Documents")
+            nav_options.insert(1, "Documents")
         if self.auth_ui.has_role("admin"):
-            nav_options.insert(len(nav_options) - 1, "👥 Admin")
+            nav_options.insert(len(nav_options) - 1, "Admin")
         page_index = 0
         if self.session_state.current_page == "chat":
             page_index = 0
         elif self.session_state.current_page == "documents":
-            page_index = nav_options.index("📄 Documents") if "📄 Documents" in nav_options else 0
+            page_index = nav_options.index("Documents") if "Documents" in nav_options else 0
         elif self.session_state.current_page == "admin":
-            page_index = nav_options.index("👥 Admin") if "👥 Admin" in nav_options else 0
+            page_index = nav_options.index("Admin") if "Admin" in nav_options else 0
         else:
-            page_index = nav_options.index("⚙️ Settings")
-        page = st.sidebar.radio("Page", nav_options, index=page_index)
-        if page == "💬 Chat":
+            page_index = nav_options.index("Settings")
+        page = st.sidebar.radio("Page", nav_options, index=page_index, label_visibility="collapsed")
+        if page == "Chat":
             self.session_state.current_page = "chat"
-        elif page == "📄 Documents":
+        elif page == "Documents":
             self.session_state.current_page = "documents"
-        elif page == "👥 Admin":
+        elif page == "Admin":
             self.session_state.current_page = "admin"
-        elif page == "⚙️ Settings":
+        elif page == "Settings":
             self.session_state.current_page = "settings"
         
         # API Status
@@ -283,15 +335,15 @@ class LegalChatbotUI:
         api_connected = self.check_api_status()
         
         if api_connected:
-            st.sidebar.success("🟢 API Connected")
+            st.sidebar.success("API connected")
         else:
-            st.sidebar.error("🔴 API Disconnected")
-            st.sidebar.info("Start the FastAPI server with: `uvicorn app.api.main:app --reload --port 8000`")
+            st.sidebar.error("API disconnected")
+            st.sidebar.caption("Start: `uvicorn app.api.main:app --reload --port 8000`")
         
         # Mode Selection (only show in chat page)
         if self.session_state.current_page == "chat":
             st.sidebar.markdown("---")
-            st.sidebar.subheader("🎯 Response Mode")
+            st.sidebar.subheader("Response mode")
             
             user_role = self.auth_ui.get_user_role()
             if user_role in ["solicitor", "admin"]:
@@ -307,9 +359,9 @@ class LegalChatbotUI:
             )
             
             # Advanced Settings
-            st.sidebar.subheader("⚙️ Advanced Settings")
+            st.sidebar.subheader("Advanced")
             top_k = st.sidebar.slider(
-                "Number of sources to retrieve:",
+                "Sources to retrieve",
                 min_value=1,
                 max_value=10,
                 value=3,
@@ -317,21 +369,17 @@ class LegalChatbotUI:
             )
             
             # Clear Chat
-            if st.sidebar.button("🗑️ Clear Chat History"):
+            if st.sidebar.button("Clear chat", use_container_width=True):
                 self.session_state.messages = []
                 st.rerun()
             
             # About Section
             st.sidebar.markdown("---")
-            st.sidebar.subheader("ℹ️ About")
-            st.sidebar.info("""
-            This legal chatbot provides answers based on UK law using:
-            - Sale of Goods Act 1979
-            - Employment Rights Act 1996
-            - Data Protection Act 2018
-            
-            **Note:** This is for educational purposes only and does not constitute legal advice.
-            """)
+            st.sidebar.subheader("About")
+            st.sidebar.caption(
+                "Answers based on UK legislation (Sale of Goods Act, Employment Rights Act, Data Protection Act). "
+                "Educational use only — not legal advice."
+            )
             
             return mode, top_k
         else:
@@ -354,8 +402,8 @@ class LegalChatbotUI:
     
     def _render_chat_interface(self, mode: str, top_k: int):
         """Render the main chat interface"""
-        st.title("⚖️ Legal Chatbot")
-        st.markdown("Ask questions about UK law and get answers with proper citations!")
+        st.title("Legal Chatbot")
+        st.caption("Ask questions about UK law. Every answer is grounded in sources and cited.")
         
         # Display chat messages
         for message in self.session_state.messages:
@@ -426,10 +474,15 @@ class LegalChatbotUI:
                     # Display metadata
                     if response_with_metadata:
                         self.display_response_metadata(response_with_metadata)
+        
+        # Footer disclaimer
+        st.markdown("---")
+        st.caption("Educational use only. Not legal advice. Consult a qualified professional for specific matters.")
     
     def _render_documents_interface(self):
         """Render documents management interface"""
-        st.title("📄 My Documents")
+        st.title("My Documents")
+        st.caption("Upload and manage your private legal corpus. Documents are searchable in chat.")
         
         # Check if user can manage documents (solicitor/admin only)
         if not require_role("solicitor", "admin"):
@@ -512,7 +565,7 @@ class LegalChatbotUI:
         
         # Upload button
         st.markdown("---")
-        st.subheader("📤 Upload Document")
+        st.subheader("Upload document")
         uploaded_file = st.file_uploader(
             "Choose a file (PDF, DOCX, TXT)",
             type=["pdf", "docx", "txt"],
@@ -556,9 +609,10 @@ class LegalChatbotUI:
     def _render_admin_interface(self):
         """Render Admin UI: list users, view roles, change role (existing API)."""
         if not require_role("admin"):
-            st.warning("⚠️ Admin page is only available for Admin users.")
+            st.warning("Admin access required.")
             return
-        st.title("👥 Admin — Users")
+        st.title("Admin")
+        st.caption("Manage users and roles.")
         try:
             headers = self.auth_ui.get_auth_headers()
             response = requests.get(
@@ -636,7 +690,8 @@ class LegalChatbotUI:
 
     def _render_settings_interface(self):
         """Render user settings interface"""
-        st.title("⚙️ Settings")
+        st.title("Settings")
+        st.caption("Manage your profile and security.")
         
         user = self.auth_ui.session_state.user
         if not user:
@@ -644,7 +699,7 @@ class LegalChatbotUI:
             return
         
         # Profile information
-        st.subheader("👤 Profile Information")
+        st.subheader("Profile")
         
         with st.form("profile_form"):
             email = st.text_input("Email", value=user.get("email", ""), disabled=True)
@@ -678,7 +733,7 @@ class LegalChatbotUI:
         
         # Change password
         st.markdown("---")
-        st.subheader("🔒 Change Password")
+        st.subheader("Change password")
         
         with st.form("password_form"):
             current_password = st.text_input("Current Password", type="password")

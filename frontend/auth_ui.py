@@ -255,7 +255,7 @@ class AuthUI:
         Returns:
             True if login successful, False otherwise
         """
-        st.subheader("🔐 Login")
+        st.subheader("Sign in")
         
         with st.form("login_form"):
             email = st.text_input("Email", placeholder="your.email@example.com")
@@ -288,7 +288,7 @@ class AuthUI:
         Returns:
             True if registration successful, False otherwise
         """
-        st.subheader("📝 Register")
+        st.subheader("Create account")
         
         with st.form("register_form"):
             email = st.text_input("Email", placeholder="your.email@example.com")
@@ -329,7 +329,7 @@ class AuthUI:
     def render_oauth_buttons(self):
         """Render OAuth login buttons"""
         st.markdown("---")
-        st.markdown("### Or login with:")
+        st.caption("Or continue with")
         
         col1, col2, col3 = st.columns(3)
         
@@ -396,7 +396,7 @@ class AuthUI:
         user = self.session_state.user
         
         st.sidebar.markdown("---")
-        st.sidebar.subheader("👤 Profile")
+        st.sidebar.subheader("Profile")
         
         # Display user info
         if user.get("full_name"):
@@ -414,16 +414,16 @@ class AuthUI:
         st.sidebar.write(f"**Role:** {role_colors.get(role, '')} {role.upper()}")
         
         # Logout button
-        if st.sidebar.button("🚪 Logout", use_container_width=True):
+        if st.sidebar.button("Sign out", use_container_width=True):
             self.logout()
             st.rerun()
     
     def render_authentication_page(self):
         """Render main authentication page with login/register tabs"""
-        st.title("⚖️ Legal Chatbot")
-        st.markdown("### Authentication Required")
+        st.title("Legal Chatbot")
+        st.caption("Sign in to access the legal assistant.")
         
-        tab1, tab2 = st.tabs(["🔐 Login", "📝 Register"])
+        tab1, tab2 = st.tabs(["Login", "Register"])
         
         with tab1:
             self.render_login_form()
@@ -431,7 +431,7 @@ class AuthUI:
         
         with tab2:
             self.render_register_form()
-            st.info("Already have an account? Switch to the Login tab.")
+            st.caption("Already have an account? Switch to the Login tab.")
     
     def handle_oauth_callback(self, code: str, state: Optional[str] = None, provider: Optional[str] = None):
         """Handle OAuth callback"""
