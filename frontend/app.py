@@ -29,13 +29,14 @@ st.markdown("""
 <style>
     /* Main content spacing */
     .block-container { padding-top: 2rem; padding-bottom: 3rem; max-width: 900px; }
-    /* Section headers */
-    h1 { font-size: 1.75rem !important; font-weight: 600 !important; color: #1e293b !important; margin-bottom: 0.5rem !important; }
+    /* Section headers — 1080p readable */
+    h1 { font-size: 2rem !important; font-weight: 600 !important; color: #1e293b !important; margin-bottom: 0.5rem !important; }
     h2 { font-size: 1.25rem !important; font-weight: 600 !important; color: #334155 !important; margin-top: 1.5rem !important; }
     h3 { font-size: 1rem !important; font-weight: 600 !important; color: #475569 !important; }
-    /* Sidebar polish */
+    /* Sidebar polish — prevent overflow */
     [data-testid="stSidebar"] { background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%); }
     [data-testid="stSidebar"] .stMarkdown { font-size: 0.9rem; }
+    [data-testid="stSidebar"] > div { max-height: 100vh; overflow-y: auto; }
     /* Section dividers */
     hr { margin: 1.5rem 0 !important; border-color: #e2e8f0 !important; }
     /* Chat message bubbles: spacing, borders, role distinction */
@@ -266,13 +267,13 @@ class LegalChatbotUI:
                     is_safe = safety.get('is_safe', True)
                     if guardrails_applied:
                         if is_safe:
-                            st.success("✅ **Guardrails Applied:** True")
+                            st.success("Guardrails applied")
                         else:
-                            st.warning("⚠️ **Guardrails Applied:** True (warnings)")
+                            st.warning("Guardrails applied (warnings)")
                     else:
-                        st.error("❌ **Guardrails Applied:** False")
+                        st.error("Guardrails not applied")
                 else:
-                    st.write("**Guardrails Applied:**", "✅ True" if guardrails_applied else "❌ False")
+                    st.write("**Guardrails:**", "Applied" if guardrails_applied else "Not applied")
                 
                 # Display guardrails result if available
                 if response.get('guardrails_result'):
@@ -362,7 +363,7 @@ class LegalChatbotUI:
             st.sidebar.success("API connected")
         else:
             st.sidebar.error("API disconnected")
-            st.sidebar.caption("Start: `uvicorn app.api.main:app --reload --port 8000`")
+            st.sidebar.caption("Start the backend server to connect.")
         
         # Mode Selection (only show in chat page)
         if self.session_state.current_page == "chat":
@@ -434,9 +435,9 @@ class LegalChatbotUI:
         st.title("Legal Chatbot")
         st.caption("Ask questions about UK law. Every answer is grounded in sources and cited.")
         
-        # Empty state: helpful prompt
+        # Empty state: clean, screenshot-ready
         if not self.session_state.messages:
-            st.info("Answers are grounded in UK legislation. Ask a question to get started.")
+            st.caption("Answers are grounded in UK legislation. Type a question below to begin.")
         
         # Display chat messages
         for message in self.session_state.messages:
@@ -508,9 +509,9 @@ class LegalChatbotUI:
                     if response_with_metadata:
                         self.display_response_metadata(response_with_metadata)
         
-        # Footer disclaimer
+        # Footer disclaimer — subtle for screenshots
         st.markdown("---")
-        st.caption("Educational use only. Not legal advice. Consult a qualified professional for specific matters.")
+        st.caption("Educational use only. Not legal advice.")
     
     def _render_documents_interface(self):
         """Render documents management interface"""
@@ -760,7 +761,7 @@ class LegalChatbotUI:
                     if response.status_code == 200:
                         updated_user = response.json()
                         self.auth_ui._store_user(updated_user)
-                        st.success("✅ Profile updated successfully!")
+                        st.success("Profile updated successfully.")
                         st.rerun()
                     else:
                         st.error(f"Update failed: {response.json().get('detail', 'Unknown error')}")
@@ -797,7 +798,7 @@ class LegalChatbotUI:
                         )
                         
                         if response.status_code == 200 or response.status_code == 204:
-                            st.success("✅ Password changed successfully!")
+                            st.success("Password changed successfully.")
                         else:
                             st.error(f"Password change failed: {response.json().get('detail', 'Unknown error')}")
                     except Exception as e:
@@ -814,7 +815,7 @@ class LegalChatbotUI:
             
             if provider and code:
                 if self.auth_ui.handle_oauth_callback(code, provider=provider):
-                    st.success("OAuth login successful!")
+                    st.success("OAuth login successful.")
                     time.sleep(1)
                     # Clear query params
                     st.query_params.clear()

@@ -334,15 +334,15 @@ class AuthUI:
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("🔵 Google", use_container_width=True, key="oauth_google"):
+            if st.button("Google", use_container_width=True, key="oauth_google"):
                 self._initiate_oauth("google")
         
         with col2:
-            if st.button("⚫ GitHub", use_container_width=True, key="oauth_github"):
+            if st.button("GitHub", use_container_width=True, key="oauth_github"):
                 self._initiate_oauth("github")
         
         with col3:
-            if st.button("🟦 Microsoft", use_container_width=True, key="oauth_microsoft"):
+            if st.button("Microsoft", use_container_width=True, key="oauth_microsoft"):
                 self._initiate_oauth("microsoft")
     
     def _initiate_oauth(self, provider: str):
@@ -423,7 +423,7 @@ class AuthUI:
         """Render main authentication page with login/register tabs"""
         st.title("Legal Chatbot")
         st.caption("Sign in to access the legal assistant.")
-        st.info("Sign in or create an account to ask questions about UK law.")
+        st.caption("Sign in or create an account to get started.")
         
         tab1, tab2 = st.tabs(["Login", "Register"])
         
