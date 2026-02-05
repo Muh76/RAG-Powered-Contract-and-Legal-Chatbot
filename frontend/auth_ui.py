@@ -389,29 +389,30 @@ class AuthUI:
             st.error(f"OAuth error: {str(e)}")
     
     def render_user_profile(self):
-        """Render user profile display"""
+        """Render user profile display — visual clarity only, no logic changes"""
         if not self.session_state.user:
             return
         
         user = self.session_state.user
+        role = user.get("role", "public")
         
         st.sidebar.markdown("---")
-        st.sidebar.subheader("Profile")
+        st.sidebar.markdown("**Signed in**", help="Current user and access level")
         
-        # Display user info
-        if user.get("full_name"):
-            st.sidebar.write(f"**Name:** {user['full_name']}")
-        if user.get("email"):
-            st.sidebar.write(f"**Email:** {user['email']}")
+        # User name (primary)
+        name = user.get("full_name") or user.get("email", "User")
+        st.sidebar.markdown(f'<span class="sidebar-user-name">{name}</span>', unsafe_allow_html=True)
         
-        # Role badge
-        role = user.get("role", "public")
-        role_colors = {
-            "admin": "🔴",
-            "solicitor": "🟡",
-            "public": "🟢"
-        }
-        st.sidebar.write(f"**Role:** {role_colors.get(role, '')} {role.upper()}")
+        # Email (secondary)
+        if user.get("email") and user.get("full_name"):
+            st.sidebar.markdown(f'<span class="sidebar-user-email">{user["email"]}</span>', unsafe_allow_html=True)
+        
+        # Role badge: Public / Solicitor / Admin
+        role_class = f"sidebar-role-{role}"
+        role_label = role.capitalize()
+        st.sidebar.markdown(f'<span class="sidebar-role-badge {role_class}">{role_label}</span>', unsafe_allow_html=True)
+        st.sidebar.caption("Access level")
+        st.sidebar.markdown("")  # spacing
         
         # Logout button
         if st.sidebar.button("Sign out", use_container_width=True):
@@ -422,6 +423,7 @@ class AuthUI:
         """Render main authentication page with login/register tabs"""
         st.title("Legal Chatbot")
         st.caption("Sign in to access the legal assistant.")
+        st.info("Sign in or create an account to ask questions about UK law.")
         
         tab1, tab2 = st.tabs(["Login", "Register"])
         

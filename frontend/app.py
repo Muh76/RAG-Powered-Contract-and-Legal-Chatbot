@@ -71,6 +71,14 @@ st.markdown("""
     .stWarning { background-color: #fffbeb !important; border-radius: 8px; }
     /* Caption text */
     .stCaptionContainer { color: #64748b; font-size: 0.85rem; }
+    /* Sidebar: role badge, user info, mode selection */
+    .sidebar-role-badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .sidebar-role-public { background: #dcfce7; color: #166534; }
+    .sidebar-role-solicitor { background: #fef3c7; color: #92400e; }
+    .sidebar-role-admin { background: #fee2e2; color: #991b1b; }
+    .sidebar-user-name { font-weight: 600; color: #1e293b; font-size: 0.95rem; }
+    .sidebar-user-email { color: #64748b; font-size: 0.8rem; }
+    .sidebar-mode-label { font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.25rem; }
     /* Citation badges */
     .cite-badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; background: #1e293b; color: #fff; margin-right: 0.5rem; }
     .cite-badge-green { background: #059669; color: #fff; }
@@ -306,7 +314,7 @@ class LegalChatbotUI:
     def render_sidebar(self):
         """Render the sidebar with controls and user profile"""
         st.sidebar.title("Legal Chatbot")
-        st.sidebar.caption("UK Law · RAG-powered")
+        st.sidebar.caption("UK Law · RAG-powered · Role-based access")
         
         # Check authentication first
         if not self.auth_ui.ensure_authenticated():
@@ -321,7 +329,7 @@ class LegalChatbotUI:
         
         # Navigation (Admin: list + role; Solicitor/Admin: documents)
         st.sidebar.markdown("---")
-        st.sidebar.subheader("Navigation")
+        st.sidebar.markdown("**Navigation**")
         nav_options = ["Chat", "Settings"]
         if self.auth_ui.has_role("solicitor", "admin"):
             nav_options.insert(1, "Documents")
@@ -359,23 +367,28 @@ class LegalChatbotUI:
         # Mode Selection (only show in chat page)
         if self.session_state.current_page == "chat":
             st.sidebar.markdown("---")
-            st.sidebar.subheader("Response mode")
+            st.sidebar.markdown('<span class="sidebar-mode-label">Response mode</span>', unsafe_allow_html=True)
             
             user_role = self.auth_ui.get_user_role()
             if user_role in ["solicitor", "admin"]:
                 mode_options = ["solicitor", "public"]
+                mode_labels = {"solicitor": "Solicitor — technical", "public": "Public — plain language"}
+                mode = st.sidebar.radio(
+                    "Mode",
+                    mode_options,
+                    index=0,
+                    format_func=lambda x: mode_labels.get(x, x),
+                    label_visibility="collapsed",
+                    help="Solicitor: Technical legal language. Public: Plain language."
+                )
             else:
-                mode_options = ["public"]
+                mode = "public"
+                st.sidebar.caption("Mode: Public (plain language)")
             
-            mode = st.sidebar.selectbox(
-                "Choose response style:",
-                mode_options,
-                index=0,
-                help="Solicitor: Technical legal language. Public: Plain language explanations."
-            )
+            st.sidebar.markdown("")  # spacing
             
             # Advanced Settings
-            st.sidebar.subheader("Advanced")
+            st.sidebar.markdown("**Advanced**")
             top_k = st.sidebar.slider(
                 "Sources to retrieve",
                 min_value=1,
@@ -391,7 +404,7 @@ class LegalChatbotUI:
             
             # About Section
             st.sidebar.markdown("---")
-            st.sidebar.subheader("About")
+            st.sidebar.markdown("**About**")
             st.sidebar.caption(
                 "Answers based on UK legislation (Sale of Goods Act, Employment Rights Act, Data Protection Act). "
                 "Educational use only — not legal advice."
@@ -421,6 +434,10 @@ class LegalChatbotUI:
         st.title("Legal Chatbot")
         st.caption("Ask questions about UK law. Every answer is grounded in sources and cited.")
         
+        # Empty state: helpful prompt
+        if not self.session_state.messages:
+            st.info("Answers are grounded in UK legislation. Ask a question to get started.")
+        
         # Display chat messages
         for message in self.session_state.messages:
             with st.chat_message(message["role"]):
@@ -443,12 +460,12 @@ class LegalChatbotUI:
             
             # Get assistant response
             with st.chat_message("assistant"):
-                with st.spinner("Thinking..."):
+                with st.spinner("Searching sources & generating answer..."):
                     response = self.send_chat_request(prompt, mode, top_k)
                 
                 if "error" in response:
-                    st.error(f"Error: {response['error']}")
-                    st.text(response.get('detail', ''))
+                    st.error(f"**{response['error']}**")
+                    st.caption(response.get('detail', ''))
                 else:
                     # Display answer
                     answer = response.get('answer', 'No answer provided')
@@ -502,7 +519,7 @@ class LegalChatbotUI:
         
         # Check if user can manage documents (solicitor/admin only)
         if not require_role("solicitor", "admin"):
-            st.warning("⚠️ Document management is only available for Solicitor and Admin users.")
+            st.warning("Document management is only available for Solicitor and Admin users.")
             return
         
         # List documents
@@ -520,14 +537,14 @@ class LegalChatbotUI:
                 documents = data.get("documents", [])
                 total = data.get("total", 0)
                 
-                st.success(f"📚 You have {total} document(s)")
+                st.success(f"You have {total} document(s)")
                 
                 if documents:
                     for doc in documents:
                         doc_id = doc.get("id")
                         title = doc.get("title") or doc.get("original_filename", "Untitled")
                         status = doc.get("status", "unknown")
-                        with st.expander(f"📄 {title} — {status}"):
+                        with st.expander(f"{title} — {status}"):
                             col1, col2 = st.columns(2)
                             with col1:
                                 st.write(f"**Type:** {doc.get('file_type', 'N/A')}")
@@ -543,13 +560,14 @@ class LegalChatbotUI:
                             st.markdown("---")
                             btn_col1, btn_col2, _ = st.columns([1, 1, 3])
                             with btn_col1:
-                                if st.button("🔄 Reprocess", key=f"reprocess_{doc_id}", use_container_width=True):
+                                if st.button("Reprocess", key=f"reprocess_{doc_id}", use_container_width=True):
                                     try:
-                                        r = requests.post(
-                                            f"{self.api_base_url}/api/v1/documents/{doc_id}/reprocess",
-                                            headers=headers,
-                                            timeout=120,
-                                        )
+                                        with st.spinner("Reprocessing..."):
+                                            r = requests.post(
+                                                f"{self.api_base_url}/api/v1/documents/{doc_id}/reprocess",
+                                                headers=headers,
+                                                timeout=120,
+                                            )
                                         if r.status_code == 200:
                                             st.success("Reprocessing started.")
                                             st.rerun()
@@ -558,7 +576,7 @@ class LegalChatbotUI:
                                     except Exception as e:
                                         st.error(str(e))
                             with btn_col2:
-                                if st.button("🗑️ Delete", key=f"delete_{doc_id}", use_container_width=True):
+                                if st.button("Delete", key=f"delete_{doc_id}", use_container_width=True):
                                     try:
                                         r = requests.delete(
                                             f"{self.api_base_url}/api/v1/documents/{doc_id}",
@@ -582,8 +600,9 @@ class LegalChatbotUI:
         # Upload button
         st.markdown("---")
         st.subheader("Upload document")
+        st.caption("PDF, DOCX, or TXT. Documents are indexed and searchable in chat.")
         uploaded_file = st.file_uploader(
-            "Choose a file (PDF, DOCX, TXT)",
+            "Choose a file",
             type=["pdf", "docx", "txt"],
             help="Upload a legal document to add to your private corpus"
         )
@@ -595,32 +614,33 @@ class LegalChatbotUI:
             tags = col3.text_input("Tags (comma-separated)")
             
             if st.button("Upload Document", use_container_width=True):
-                try:
-                    files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-                    data = {}
-                    if title:
-                        data["title"] = title
-                    if jurisdiction:
-                        data["jurisdiction"] = jurisdiction
-                    if tags:
-                        data["tags"] = tags
-                    
-                    headers = self.auth_ui.get_auth_headers()
-                    response = requests.post(
-                        f"{self.api_base_url}/api/v1/documents/upload",
-                        headers=headers,
-                        files=files,
-                        data=data,
-                        timeout=60
-                    )
-                    
-                    if response.status_code == 201:
-                        st.success("✅ Document uploaded successfully!")
-                        st.rerun()
-                    else:
-                        st.error(f"Upload failed: {response.json().get('detail', 'Unknown error')}")
-                except Exception as e:
-                    st.error(f"Upload error: {str(e)}")
+                with st.spinner("Uploading and indexing..."):
+                    try:
+                        files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+                        data = {}
+                        if title:
+                            data["title"] = title
+                        if jurisdiction:
+                            data["jurisdiction"] = jurisdiction
+                        if tags:
+                            data["tags"] = tags
+                        
+                        headers = self.auth_ui.get_auth_headers()
+                        response = requests.post(
+                            f"{self.api_base_url}/api/v1/documents/upload",
+                            headers=headers,
+                            files=files,
+                            data=data,
+                            timeout=60
+                        )
+                        
+                        if response.status_code == 201:
+                            st.success("Document uploaded successfully.")
+                            st.rerun()
+                        else:
+                            st.error(f"Upload failed: {response.json().get('detail', 'Unknown error')}")
+                    except Exception as e:
+                        st.error(f"Upload error: {str(e)}")
 
     def _render_admin_interface(self):
         """Render Admin UI: list users, view roles, change role (existing API)."""
