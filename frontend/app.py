@@ -51,7 +51,11 @@ st.markdown("""
     [data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div { margin-bottom: 0.4rem !important; }
     [data-testid="stSidebar"] [data-testid="stExpander"] { border: 1px solid #242938 !important; border-radius: 8px !important; margin-top: 0.5rem !important; }
     [data-testid="stSidebar"] [data-testid="stExpander"] summary { color: #9CA3AF !important; }
-    /* API connected pill — accent green */
+    /* Navigation: clean labels, subtle active highlight */
+    [data-testid="stSidebar"] [data-testid="stRadio"] label { color: #9CA3AF !important; }
+    [data-testid="stSidebar"] [data-testid="stRadio"] [data-checked="true"] label,
+    [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radio"][aria-checked="true"] ~ label { color: #D1D5DB !important; }
+    /* API connected pill — visible, accent green */
     [data-testid="stSidebar"] [data-testid="stAlert"] { border-radius: 6px !important; }
     /* Role badges */
     .sidebar-role-badge { display: inline-block; padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; margin-top: 0.5rem; }
@@ -59,8 +63,8 @@ st.markdown("""
     .sidebar-role-solicitor { background: rgba(34, 197, 94, 0.12); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.25); }
     .sidebar-role-admin { background: rgba(34, 197, 94, 0.12); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.25); }
     .sidebar-user-name { font-weight: 600; color: #F5F7FA !important; font-size: 1rem; }
-    .sidebar-user-email { color: #9CA3AF !important; font-size: 0.85rem; }
-    .sidebar-mode-label { font-size: 0.7rem; color: #9CA3AF !important; text-transform: uppercase; margin-bottom: 0.35rem; }
+    .sidebar-user-email { color: #D1D5DB !important; font-size: 0.85rem; }
+    .sidebar-section-label { color: #9CA3AF !important; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; }
     /* === HERO — high-contrast readability (override Streamlit defaults) === */
     .chat-hero { margin-bottom: 1.5rem; padding-bottom: 1.25rem; text-align: center; border-bottom: 1px solid #242938; }
     .chat-hero h1, .chat-hero .chat-hero-title, div[data-testid="stMarkdown"] .chat-hero h1 { color: #F5F7FA !important; font-size: 2.5rem !important; font-weight: 700 !important; }
@@ -393,7 +397,7 @@ class LegalChatbotUI:
         
         # Navigation (Admin: list + role; Solicitor/Admin: documents)
         st.sidebar.markdown("---")
-        st.sidebar.markdown("**Navigation**")
+        st.sidebar.markdown('<span class="sidebar-section-label">Navigation</span>', unsafe_allow_html=True)
         nav_options = ["Chat", "Settings"]
         if self.auth_ui.has_role("solicitor", "admin"):
             nav_options.insert(1, "Documents")
@@ -428,31 +432,24 @@ class LegalChatbotUI:
             st.sidebar.error("API disconnected")
             st.sidebar.caption("Start the backend server to connect.")
         
-        # Mode Selection (only show in chat page)
+        # Chat page: Advanced settings (mode, slider, clear) in expander
         if self.session_state.current_page == "chat":
-            st.sidebar.markdown("---")
-            st.sidebar.markdown('<span class="sidebar-mode-label">Response mode</span>', unsafe_allow_html=True)
-            
-            user_role = self.auth_ui.get_user_role()
-            if user_role in ["solicitor", "admin"]:
-                mode_options = ["solicitor", "public"]
-                mode_labels = {"solicitor": "Solicitor — technical", "public": "Public — plain language"}
-                mode = st.sidebar.radio(
-                    "Mode",
-                    mode_options,
-                    index=0,
-                    format_func=lambda x: mode_labels.get(x, x),
-                    label_visibility="collapsed",
-                    help="Solicitor: Technical legal language. Public: Plain language."
-                )
-            else:
-                mode = "public"
-                st.sidebar.caption("Mode: Public (plain language)")
-            
-            st.sidebar.markdown("")  # spacing
-            
-            # Advanced Settings (collapsible)
             with st.sidebar.expander("Advanced", expanded=False):
+                user_role = self.auth_ui.get_user_role()
+                if user_role in ["solicitor", "admin"]:
+                    mode_options = ["solicitor", "public"]
+                    mode_labels = {"solicitor": "Solicitor — technical", "public": "Public — plain language"}
+                    mode = st.radio(
+                        "Response mode",
+                        mode_options,
+                        index=0,
+                        format_func=lambda x: mode_labels.get(x, x),
+                        help="Solicitor: Technical legal language. Public: Plain language."
+                    )
+                else:
+                    mode = "public"
+                    st.caption("Mode: Public (plain language)")
+                
                 top_k = st.slider(
                     "Sources to retrieve",
                     min_value=1,
@@ -467,7 +464,7 @@ class LegalChatbotUI:
             
             # About Section
             st.sidebar.markdown("---")
-            st.sidebar.markdown("**About**")
+            st.sidebar.markdown('<span class="sidebar-section-label">About</span>', unsafe_allow_html=True)
             st.sidebar.caption(
                 "Answers based on UK legislation (Sale of Goods Act, Employment Rights Act, Data Protection Act). "
                 "Educational use only — not legal advice."
