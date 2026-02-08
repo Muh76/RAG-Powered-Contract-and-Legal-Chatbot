@@ -61,69 +61,82 @@ st.markdown("""
     .sidebar-user-name { font-weight: 600; color: #F5F7FA !important; font-size: 1rem; }
     .sidebar-user-email { color: #9CA3AF !important; font-size: 0.85rem; }
     .sidebar-mode-label { font-size: 0.7rem; color: #9CA3AF !important; text-transform: uppercase; margin-bottom: 0.35rem; }
-    /* === HERO === */
+    /* === HERO — high-contrast readability (override Streamlit defaults) === */
     .chat-hero { margin-bottom: 1.5rem; padding-bottom: 1.25rem; text-align: center; border-bottom: 1px solid #242938; }
+    .chat-hero h1, .chat-hero .chat-hero-title, div[data-testid="stMarkdown"] .chat-hero h1 { color: #F5F7FA !important; font-size: 2.5rem !important; font-weight: 700 !important; }
     .chat-hero-title { font-size: 2.5rem !important; font-weight: 700 !important; color: #F5F7FA !important; letter-spacing: -0.03em !important; margin-bottom: 0.5rem !important; }
-    .chat-hero-subtitle { font-size: 1.1rem !important; color: #D1D5DB !important; line-height: 1.5 !important; margin: 0 auto 1rem auto !important; font-weight: 500 !important; }
-    .chat-hero-features { font-size: 0.9rem !important; color: #9CA3AF !important; line-height: 1.7 !important; margin: 0 auto !important; max-width: 32em; text-align: left; display: inline-block; }
-    .chat-hero-features li { margin-bottom: 0.25rem; }
-    /* === CHAT MESSAGES === */
+    .chat-hero-subtitle, .chat-hero p { color: #D1D5DB !important; font-size: 1.1rem !important; line-height: 1.5 !important; margin: 0 auto 1rem auto !important; font-weight: 500 !important; }
+    .chat-hero-features, .chat-hero ul { color: #9CA3AF !important; font-size: 0.9rem !important; line-height: 1.7 !important; margin: 0 auto !important; max-width: 32em; text-align: left; display: inline-block; }
+    .chat-hero-features li { margin-bottom: 0.25rem; color: #9CA3AF !important; }
+    /* === CHAT MESSAGES — readable bubbles/cards === */
     [data-testid="stChatMessage"] {
-        padding: 1rem 1.25rem !important;
-        margin-bottom: 1rem !important;
-        border-radius: 10px !important;
+        padding: 1.25rem 1.5rem !important;
+        margin-bottom: 1.25rem !important;
+        border-radius: 12px !important;
         border: 1px solid #242938 !important;
+    }
+    [data-testid="stChatMessage"] .stMarkdown, [data-testid="stChatMessage"] p {
+        color: #D1D5DB !important; font-size: 1rem !important; line-height: 1.6 !important;
     }
     /* User: darker card (odd messages) */
     [data-testid="stChatMessage"]:nth-of-type(odd) { background: #151822 !important; border-left: 4px solid #242938 !important; }
     /* Assistant: neutral card with accent (even messages) */
     [data-testid="stChatMessage"]:nth-of-type(even) { background: #1a1d28 !important; border-left: 4px solid #22C55E !important; }
-    /* Citations */
-    .citations-spacer { margin-top: 1rem; display: block; }
+    /* Citations/Sources — tidy collapsible panel */
+    .citations-spacer { margin-top: 1.25rem; display: block; }
     [data-testid="stChatMessage"] [data-testid="stExpander"] {
         border: 1px solid #242938 !important;
         border-left: 3px solid #22C55E !important;
-        border-radius: 6px !important;
-        margin: 0.5rem 0 !important;
+        border-radius: 8px !important;
+        margin: 0.75rem 0 !important;
+        padding: 0.75rem !important;
         background: #151822 !important;
     }
+    [data-testid="stChatMessage"] [data-testid="stExpander"] summary {
+        color: #D1D5DB !important; font-weight: 500 !important; padding: 0.25rem 0 !important;
+    }
     [data-testid="stChatMessage"] [data-testid="stExpander"] pre,
-    [data-testid="stChatMessage"] [data-testid="stExpander"] code { font-size: 0.8rem !important; color: #9CA3AF !important; }
-    .cite-badge { background: #22C55E !important; color: #0F1117 !important; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+    [data-testid="stChatMessage"] [data-testid="stExpander"] code { font-size: 0.825rem !important; color: #9CA3AF !important; line-height: 1.5 !important; }
+    .cite-badge { background: #22C55E !important; color: #0F1117 !important; padding: 0.25rem 0.5rem; border-radius: 6px; font-size: 0.75rem; font-weight: 600; }
     .source-title { color: #D1D5DB !important; }
     .source-meta { color: #9CA3AF !important; }
-    /* === CHAT INPUT: primary CTA === */
+    /* === CHAT INPUT: composer card === */
     [data-testid="stChatInput"],
+    .stChatInputContainer,
     .stChatInputContainer > div {
-        padding: 1rem 1.25rem !important;
-        border-radius: 14px !important;
-        border: 2px solid #242938 !important;
+        padding: 1.25rem 1.5rem !important;
+        border-radius: 16px !important;
+        border: 1px solid #242938 !important;
         background: #151822 !important;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.25), 0 0 0 1px rgba(36,41,56,0.5) !important;
         transition: border-color 0.2s, box-shadow 0.2s !important;
     }
     [data-testid="stChatInput"]:hover,
     .stChatInputContainer:hover > div {
         border-color: #242938 !important;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.4) !important;
+        box-shadow: 0 6px 20px rgba(0,0,0,0.3), 0 0 0 1px rgba(36,41,56,0.6) !important;
     }
     [data-testid="stChatInput"]:focus-within,
     .stChatInputContainer:focus-within > div {
         border-color: #22C55E !important;
-        box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2) !important;
+        box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2), 0 4px 16px rgba(0,0,0,0.25) !important;
     }
     [data-testid="stChatInput"] textarea,
     .stChatInputContainer textarea {
         background: #1a1d28 !important;
         color: #F5F7FA !important;
         border: none !important;
+        font-size: 1rem !important;
+        line-height: 1.5 !important;
     }
-    /* Send button — accent green */
+    [data-testid="stChatInput"] textarea::placeholder,
+    .stChatInputContainer textarea::placeholder { color: #9CA3AF !important; }
+    /* Send button — accent #22C55E + hover */
     [data-testid="stChatInput"] button,
     .stChatInputContainer button {
         background: #22C55E !important;
         color: #0F1117 !important;
-        border-radius: 8px !important;
+        border-radius: 10px !important;
         font-weight: 600 !important;
     }
     [data-testid="stChatInput"] button:hover,
