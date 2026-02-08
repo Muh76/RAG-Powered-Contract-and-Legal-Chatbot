@@ -33,10 +33,16 @@ st.markdown("""
     h1 { font-size: 2rem !important; font-weight: 600 !important; color: #1e293b !important; margin-bottom: 0.5rem !important; }
     h2 { font-size: 1.25rem !important; font-weight: 600 !important; color: #334155 !important; margin-top: 1.5rem !important; }
     h3 { font-size: 1rem !important; font-weight: 600 !important; color: #475569 !important; }
-    /* Sidebar polish — prevent overflow */
-    [data-testid="stSidebar"] { background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%); }
-    [data-testid="stSidebar"] .stMarkdown { font-size: 0.9rem; }
-    [data-testid="stSidebar"] > div { max-height: 100vh; overflow-y: auto; }
+    /* Sidebar: dark slate palette, aligned with main theme */
+    [data-testid="stSidebar"] { background: linear-gradient(180deg, #1e293b 0%, #334155 100%); }
+    [data-testid="stSidebar"] > div { max-height: 100vh; overflow-y: auto; padding: 0 1rem 1rem 1rem; }
+    [data-testid="stSidebar"] .stMarkdown { font-size: 0.9rem; color: #e2e8f0; }
+    [data-testid="stSidebar"] h1 { color: #f8fafc !important; font-weight: 600 !important; margin-bottom: 0.25rem !important; }
+    [data-testid="stSidebar"] hr { border-color: #475569 !important; margin: 1.25rem 0 !important; }
+    /* Sidebar success/error/info on dark bg */
+    [data-testid="stSidebar"] [data-testid="stAlert"] { border-radius: 6px; }
+    [data-testid="stSidebar"] .stCaptionContainer { color: #94a3b8 !important; }
+    [data-testid="stSidebar"] .stMarkdown strong { color: #f1f5f9 !important; }
     /* Section dividers */
     hr { margin: 1.5rem 0 !important; border-color: #e2e8f0 !important; }
     /* Chat message bubbles: spacing, borders, role distinction */
@@ -72,20 +78,26 @@ st.markdown("""
     .stWarning { background-color: #fffbeb !important; border-radius: 8px; }
     /* Caption text */
     .stCaptionContainer { color: #64748b; font-size: 0.85rem; }
-    /* Sidebar: role badge, user info, mode selection */
-    .sidebar-role-badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-    .sidebar-role-public { background: #dcfce7; color: #166534; }
-    .sidebar-role-solicitor { background: #fef3c7; color: #92400e; }
-    .sidebar-role-admin { background: #fee2e2; color: #991b1b; }
-    .sidebar-user-name { font-weight: 600; color: #1e293b; font-size: 0.95rem; }
-    .sidebar-user-email { color: #64748b; font-size: 0.8rem; }
-    .sidebar-mode-label { font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.25rem; }
+    /* Sidebar: role badge, user info, mode selection — dark theme */
+    .sidebar-role-badge { display: inline-block; padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 0.5rem; }
+    .sidebar-role-public { background: rgba(134, 239, 172, 0.2); color: #86efac; border: 1px solid rgba(134, 239, 172, 0.3); }
+    .sidebar-role-solicitor { background: rgba(253, 224, 71, 0.2); color: #fde047; border: 1px solid rgba(253, 224, 71, 0.3); }
+    .sidebar-role-admin { background: rgba(252, 165, 165, 0.2); color: #fca5a5; border: 1px solid rgba(252, 165, 165, 0.3); }
+    .sidebar-user-name { font-weight: 600; color: #f8fafc; font-size: 1rem; letter-spacing: -0.01em; line-height: 1.4; display: block; margin-bottom: 0.25rem; }
+    .sidebar-user-email { color: #94a3b8; font-size: 0.85rem; line-height: 1.4; display: block; margin-top: 0.25rem; }
+    .sidebar-mode-label { font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.35rem; }
+    /* Profile section spacing */
+    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div { margin-bottom: 0.5rem; }
     /* Citation badges */
     .cite-badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; background: #1e293b; color: #fff; margin-right: 0.5rem; }
     .cite-badge-green { background: #059669; color: #fff; }
     .source-title { font-weight: 600; color: #1e293b; font-size: 0.95rem; }
     .source-meta { color: #64748b; font-size: 0.85rem; margin-top: 0.25rem; }
     .source-snippet-label { font-size: 0.8rem; color: #64748b; margin-top: 0.5rem; }
+    /* Chat hero: high contrast, WCAG-friendly, clear hierarchy */
+    .chat-hero { margin-bottom: 2rem; padding-bottom: 1.5rem; }
+    .chat-hero-title { font-size: 2.25rem !important; font-weight: 700 !important; color: #0f172a !important; letter-spacing: -0.02em !important; line-height: 1.2 !important; margin-bottom: 0.5rem !important; }
+    .chat-hero-subtitle { font-size: 1rem !important; color: #475569 !important; line-height: 1.5 !important; max-width: 36em; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -432,11 +444,16 @@ class LegalChatbotUI:
     
     def _render_chat_interface(self, mode: str, top_k: int):
         """Render the main chat interface"""
-        st.title("Legal Chatbot")
-        st.caption("Ask questions about UK law. Every answer is grounded in sources and cited.")
+        st.markdown("""
+        <div class="chat-hero">
+            <h1 class="chat-hero-title">Legal Chatbot</h1>
+            <p class="chat-hero-subtitle">Ask questions about UK law. Every answer is grounded in legislation and cited to source documents.</p>
+        </div>
+        """, unsafe_allow_html=True)
         
         # Empty state: clean, screenshot-ready
         if not self.session_state.messages:
+            st.markdown("<div style='margin-top: 0.5rem; margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
             st.caption("Answers are grounded in UK legislation. Type a question below to begin.")
         
         # Display chat messages
