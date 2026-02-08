@@ -24,119 +24,118 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Production SaaS styling: clean spacing, typography, chat bubbles
+# Design system: Notion/Linear-style dark theme (demo-ready)
 st.markdown("""
 <style>
-    /* Main content spacing */
-    .block-container { padding-top: 2rem; padding-bottom: 3rem; max-width: 900px; }
-    /* Section headers — 1080p readable */
-    h1 { font-size: 2rem !important; font-weight: 600 !important; color: #1e293b !important; margin-bottom: 0.5rem !important; }
-    h2 { font-size: 1.25rem !important; font-weight: 600 !important; color: #334155 !important; margin-top: 1.5rem !important; }
-    h3 { font-size: 1rem !important; font-weight: 600 !important; color: #475569 !important; }
-    /* Sidebar: dark slate palette, aligned with main theme */
-    [data-testid="stSidebar"] { background: linear-gradient(180deg, #1e293b 0%, #334155 100%); }
-    [data-testid="stSidebar"] > div { max-height: 100vh; overflow-y: auto; padding: 0 1rem 1rem 1rem; }
-    [data-testid="stSidebar"] .stMarkdown { font-size: 0.9rem; color: #e2e8f0; }
-    [data-testid="stSidebar"] h1 { color: #f8fafc !important; font-weight: 600 !important; margin-bottom: 0.25rem !important; }
-    [data-testid="stSidebar"] hr { border-color: #475569 !important; margin: 1.25rem 0 !important; }
-    /* Sidebar success/error/info on dark bg */
-    [data-testid="stSidebar"] [data-testid="stAlert"] { border-radius: 6px; }
-    [data-testid="stSidebar"] .stCaptionContainer { color: #94a3b8 !important; }
-    [data-testid="stSidebar"] .stMarkdown strong { color: #f1f5f9 !important; }
-    /* Section dividers — subtle, not harsh */
-    hr { margin: 1.5rem 0 !important; border-color: #e2e8f0 !important; opacity: 0.8; }
-    /* Chat message bubbles: spacing, borders, role distinction */
+    /* === DESIGN SYSTEM === */
+    /* Main app: dark background #0F1117 */
+    html, body, [data-testid="stAppViewContainer"], section.main, .main, .block-container { background: #0F1117 !important; }
+    .block-container { padding-top: 2rem !important; padding-bottom: 3rem !important; max-width: 900px !important; background: transparent !important; }
+    /* Body text */
+    .stMarkdown, .stMarkdown p, [data-testid="stChatMessage"] { color: #D1D5DB !important; }
+    /* Typography hierarchy */
+    h1 { font-size: 2rem !important; font-weight: 700 !important; color: #F5F7FA !important; margin-bottom: 0.5rem !important; }
+    h2 { font-size: 1.35rem !important; font-weight: 600 !important; color: #D1D5DB !important; margin-top: 1.5rem !important; }
+    h3 { font-size: 1rem !important; font-weight: 600 !important; color: #9CA3AF !important; }
+    p { line-height: 1.6 !important; color: #D1D5DB !important; }
+    /* Dividers */
+    hr { margin: 1.5rem 0 !important; border-color: #242938 !important; }
+    /* === SIDEBAR #151822 === */
+    [data-testid="stSidebar"] { background: #151822 !important; }
+    [data-testid="stSidebar"] > div { max-height: 100vh; overflow-y: auto; padding: 0 1rem 1rem 1rem !important; }
+    [data-testid="stSidebar"] .stMarkdown { color: #9CA3AF !important; }
+    [data-testid="stSidebar"] .stMarkdown strong { color: #D1D5DB !important; }
+    [data-testid="stSidebar"] h1 { color: #F5F7FA !important; font-weight: 600 !important; }
+    [data-testid="stSidebar"] hr { border-color: #242938 !important; margin: 1rem 0 !important; }
+    [data-testid="stSidebar"] .stCaptionContainer { color: #9CA3AF !important; }
+    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div { margin-bottom: 0.4rem !important; }
+    [data-testid="stSidebar"] [data-testid="stExpander"] { border: 1px solid #242938 !important; border-radius: 8px !important; margin-top: 0.5rem !important; }
+    [data-testid="stSidebar"] [data-testid="stExpander"] summary { color: #9CA3AF !important; }
+    /* API connected pill — accent green */
+    [data-testid="stSidebar"] [data-testid="stAlert"] { border-radius: 6px !important; }
+    /* Role badges */
+    .sidebar-role-badge { display: inline-block; padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; margin-top: 0.5rem; }
+    .sidebar-role-public { background: rgba(34, 197, 94, 0.15); color: #22C55E; border: 1px solid rgba(34, 197, 94, 0.3); }
+    .sidebar-role-solicitor { background: rgba(34, 197, 94, 0.12); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.25); }
+    .sidebar-role-admin { background: rgba(34, 197, 94, 0.12); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.25); }
+    .sidebar-user-name { font-weight: 600; color: #F5F7FA !important; font-size: 1rem; }
+    .sidebar-user-email { color: #9CA3AF !important; font-size: 0.85rem; }
+    .sidebar-mode-label { font-size: 0.7rem; color: #9CA3AF !important; text-transform: uppercase; margin-bottom: 0.35rem; }
+    /* === HERO === */
+    .chat-hero { margin-bottom: 1.5rem; padding-bottom: 1.25rem; text-align: center; border-bottom: 1px solid #242938; }
+    .chat-hero-title { font-size: 2.5rem !important; font-weight: 700 !important; color: #F5F7FA !important; letter-spacing: -0.03em !important; margin-bottom: 0.5rem !important; }
+    .chat-hero-subtitle { font-size: 1.1rem !important; color: #D1D5DB !important; line-height: 1.5 !important; margin: 0 auto 1rem auto !important; font-weight: 500 !important; }
+    .chat-hero-features { font-size: 0.9rem !important; color: #9CA3AF !important; line-height: 1.7 !important; margin: 0 auto !important; max-width: 32em; text-align: left; display: inline-block; }
+    .chat-hero-features li { margin-bottom: 0.25rem; }
+    /* === CHAT MESSAGES === */
     [data-testid="stChatMessage"] {
         padding: 1rem 1.25rem !important;
         margin-bottom: 1rem !important;
         border-radius: 10px !important;
-        border: 1px solid #e2e8f0 !important;
+        border: 1px solid #242938 !important;
     }
-    /* User messages: light blue tint + slate accent */
-    [data-testid="stChatMessage"] { background: #f8fafc !important; border-left: 4px solid #94a3b8 !important; }
-    /* Assistant messages: warm neutral + stone accent (alternate with user) */
-    [data-testid="stChatMessage"]:nth-of-type(even) { background: #fafaf9 !important; border-left-color: #78716c !important; }
-    /* Citation section spacing */
+    /* User: darker card (odd messages) */
+    [data-testid="stChatMessage"]:nth-of-type(odd) { background: #151822 !important; border-left: 4px solid #242938 !important; }
+    /* Assistant: neutral card with accent (even messages) */
+    [data-testid="stChatMessage"]:nth-of-type(even) { background: #1a1d28 !important; border-left: 4px solid #22C55E !important; }
+    /* Citations */
     .citations-spacer { margin-top: 1rem; display: block; }
-    /* Citation/expander blocks: accent line, warm background */
     [data-testid="stChatMessage"] [data-testid="stExpander"] {
-        border: 1px solid #e7e5e4 !important;
-        border-left: 3px solid #78716c !important;
+        border: 1px solid #242938 !important;
+        border-left: 3px solid #22C55E !important;
         border-radius: 6px !important;
         margin: 0.5rem 0 !important;
-        background: #fafaf9 !important;
+        background: #151822 !important;
     }
-    /* Citation text snippet: monospace, smaller */
     [data-testid="stChatMessage"] [data-testid="stExpander"] pre,
-    [data-testid="stChatMessage"] [data-testid="stExpander"] code { font-size: 0.8rem !important; font-family: ui-monospace, monospace !important; }
-    /* Send button / primary action */
+    [data-testid="stChatMessage"] [data-testid="stExpander"] code { font-size: 0.8rem !important; color: #9CA3AF !important; }
+    .cite-badge { background: #22C55E !important; color: #0F1117 !important; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+    .source-title { color: #D1D5DB !important; }
+    .source-meta { color: #9CA3AF !important; }
+    /* === CHAT INPUT: primary CTA === */
+    [data-testid="stChatInput"],
+    .stChatInputContainer > div {
+        padding: 1rem 1.25rem !important;
+        border-radius: 14px !important;
+        border: 2px solid #242938 !important;
+        background: #151822 !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+        transition: border-color 0.2s, box-shadow 0.2s !important;
+    }
+    [data-testid="stChatInput"]:hover,
+    .stChatInputContainer:hover > div {
+        border-color: #242938 !important;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.4) !important;
+    }
+    [data-testid="stChatInput"]:focus-within,
+    .stChatInputContainer:focus-within > div {
+        border-color: #22C55E !important;
+        box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2) !important;
+    }
+    [data-testid="stChatInput"] textarea,
+    .stChatInputContainer textarea {
+        background: #1a1d28 !important;
+        color: #F5F7FA !important;
+        border: none !important;
+    }
+    /* Send button — accent green */
     [data-testid="stChatInput"] button,
     .stChatInputContainer button {
-        background: #1e293b !important;
-        color: #fff !important;
+        background: #22C55E !important;
+        color: #0F1117 !important;
         border-radius: 8px !important;
         font-weight: 600 !important;
     }
     [data-testid="stChatInput"] button:hover,
     .stChatInputContainer button:hover {
-        background: #334155 !important;
+        background: #4ade80 !important;
     }
-    /* Subtle success/error styling */
-    .stSuccess { background-color: #f0fdf4 !important; border-radius: 8px; }
-    .stError { background-color: #fef2f2 !important; border-radius: 8px; }
-    .stInfo { background-color: #f0f9ff !important; border-radius: 8px; }
-    .stWarning { background-color: #fffbeb !important; border-radius: 8px; }
-    /* Caption text */
-    .stCaptionContainer { color: #64748b; font-size: 0.85rem; }
-    /* Sidebar: role badge, user info, mode selection — dark theme */
-    .sidebar-role-badge { display: inline-block; padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 0.5rem; }
-    .sidebar-role-public { background: rgba(134, 239, 172, 0.2); color: #86efac; border: 1px solid rgba(134, 239, 172, 0.3); }
-    .sidebar-role-solicitor { background: rgba(253, 224, 71, 0.2); color: #fde047; border: 1px solid rgba(253, 224, 71, 0.3); }
-    .sidebar-role-admin { background: rgba(252, 165, 165, 0.2); color: #fca5a5; border: 1px solid rgba(252, 165, 165, 0.3); }
-    .sidebar-user-name { font-weight: 600; color: #f8fafc; font-size: 1rem; letter-spacing: -0.01em; line-height: 1.4; display: block; margin-bottom: 0.25rem; }
-    .sidebar-user-email { color: #94a3b8; font-size: 0.85rem; line-height: 1.4; display: block; margin-top: 0.25rem; }
-    .sidebar-mode-label { font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.35rem; }
-    /* Profile section spacing */
-    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div { margin-bottom: 0.5rem; }
-    /* Citation badges */
-    .cite-badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; background: #1e293b; color: #fff; margin-right: 0.5rem; }
-    .cite-badge-green { background: #059669; color: #fff; }
-    .source-title { font-weight: 600; color: #1e293b; font-size: 0.95rem; }
-    .source-meta { color: #64748b; font-size: 0.85rem; margin-top: 0.25rem; }
-    .source-snippet-label { font-size: 0.8rem; color: #64748b; margin-top: 0.5rem; }
-    /* Chat hero: demo-ready, high contrast, centered */
-    .chat-hero { margin-bottom: 1.75rem; padding-bottom: 1.25rem; text-align: center; }
-    .chat-hero-title { font-size: 2.5rem !important; font-weight: 700 !important; color: #0f172a !important; letter-spacing: -0.03em !important; line-height: 1.15 !important; margin-bottom: 0.5rem !important; }
-    .chat-hero-subtitle { font-size: 1.1rem !important; color: #334155 !important; line-height: 1.5 !important; max-width: 42em; margin: 0 auto 1rem auto !important; font-weight: 500 !important; }
-    .chat-hero-features { font-size: 0.9rem !important; color: #475569 !important; line-height: 1.7 !important; margin: 0 auto !important; max-width: 32em; text-align: left; display: inline-block; }
-    .chat-hero-features li { margin-bottom: 0.25rem; }
-    /* Typography: consistent hierarchy, WCAG-friendly */
-    p { line-height: 1.6 !important; }
-    /* Sidebar: softer dark, reduced noise, intentional spacing */
-    [data-testid="stSidebar"] { background: linear-gradient(180deg, #1e293b 0%, #2d3a4f 50%, #334155 100%); }
-    [data-testid="stSidebar"] > div { max-height: 100vh; overflow-y: auto; padding: 0 1rem 1.25rem 1rem !important; }
-    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div { margin-bottom: 0.4rem !important; }
-    [data-testid="stSidebar"] hr { margin: 1rem 0 !important; opacity: 0.6; }
-    /* Chat input: primary CTA, focal point, subtle glow */
-    [data-testid="stChatInput"],
-    .stChatInputContainer > div {
-        padding: 1rem 1.2rem !important;
-        border-radius: 14px !important;
-        border: 2px solid #cbd5e1 !important;
-        background: #ffffff !important;
-        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(30, 41, 59, 0.04) !important;
-        transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
-    }
-    [data-testid="stChatInput"]:hover,
-    .stChatInputContainer:hover > div {
-        border-color: #94a3b8 !important;
-        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.1), 0 0 0 1px rgba(30, 41, 59, 0.06) !important;
-    }
-    [data-testid="stChatInput"]:focus-within,
-    .stChatInputContainer:focus-within > div {
-        border-color: #1e293b !important;
-        box-shadow: 0 0 0 4px rgba(30, 41, 59, 0.15) !important;
-    }
+    /* Alerts */
+    .stSuccess { background: rgba(34, 197, 94, 0.15) !important; color: #22C55E !important; border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 8px; }
+    .stError { background: rgba(239, 68, 68, 0.15) !important; border-radius: 8px; }
+    .stInfo { background: rgba(34, 197, 94, 0.1) !important; border-radius: 8px; }
+    .stWarning { background: rgba(234, 179, 8, 0.15) !important; border-radius: 8px; }
+    .stCaptionContainer { color: #9CA3AF !important; font-size: 0.85rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -439,20 +438,19 @@ class LegalChatbotUI:
             
             st.sidebar.markdown("")  # spacing
             
-            # Advanced Settings
-            st.sidebar.markdown("**Advanced**")
-            top_k = st.sidebar.slider(
-                "Sources to retrieve",
-                min_value=1,
-                max_value=10,
-                value=3,
-                help="How many legal sources to retrieve for the answer"
-            )
-            
-            # Clear Chat
-            if st.sidebar.button("Clear chat", use_container_width=True):
-                self.session_state.messages = []
-                st.rerun()
+            # Advanced Settings (collapsible)
+            with st.sidebar.expander("Advanced", expanded=False):
+                top_k = st.slider(
+                    "Sources to retrieve",
+                    min_value=1,
+                    max_value=10,
+                    value=3,
+                    help="How many legal sources to retrieve for the answer"
+                )
+                
+                if st.button("Clear chat", use_container_width=True):
+                    self.session_state.messages = []
+                    st.rerun()
             
             # About Section
             st.sidebar.markdown("---")
@@ -486,7 +484,7 @@ class LegalChatbotUI:
         st.markdown("""
         <div class="chat-hero">
             <h1 class="chat-hero-title">Legal Chatbot</h1>
-            <p class="chat-hero-subtitle">AI-powered legal assistant for UK law with verified citations.</p>
+            <p class="chat-hero-subtitle">AI-powered UK legal assistant with verified citations</p>
             <ul class="chat-hero-features">
                 <li>Retrieval-Augmented Generation (RAG)</li>
                 <li>Source-backed legal answers</li>
@@ -514,7 +512,7 @@ class LegalChatbotUI:
                     self.display_response_metadata(message["metadata"])
         
         # Chat input
-        if prompt := st.chat_input("Ask about UK consumer rights…"):
+        if prompt := st.chat_input("Ask about UK consumer rights, employment law, contracts..."):
             # Add user message
             self.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
