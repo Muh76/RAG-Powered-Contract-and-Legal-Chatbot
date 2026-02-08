@@ -69,8 +69,39 @@ st.markdown("""
     /* Citation text snippet: monospace, smaller */
     [data-testid="stChatMessage"] [data-testid="stExpander"] pre,
     [data-testid="stChatMessage"] [data-testid="stExpander"] code { font-size: 0.8rem !important; font-family: ui-monospace, monospace !important; }
-    /* Chat input area */
-    [data-testid="stChatInput"] { padding: 0.8rem !important; }
+    /* Chat input: prominent, clear primary action */
+    [data-testid="stChatInput"],
+    .stChatInputContainer > div {
+        padding: 0.9rem 1rem !important;
+        border-radius: 12px !important;
+        border: 1.5px solid #e2e8f0 !important;
+        background: #ffffff !important;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06) !important;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+    }
+    [data-testid="stChatInput"]:hover,
+    .stChatInputContainer:hover > div {
+        border-color: #94a3b8 !important;
+        box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08) !important;
+    }
+    [data-testid="stChatInput"]:focus-within,
+    .stChatInputContainer:focus-within > div {
+        border-color: #1e293b !important;
+        box-shadow: 0 0 0 3px rgba(30, 41, 59, 0.12) !important;
+        outline: none !important;
+    }
+    /* Send button / primary action */
+    [data-testid="stChatInput"] button,
+    .stChatInputContainer button {
+        background: #1e293b !important;
+        color: #fff !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+    }
+    [data-testid="stChatInput"] button:hover,
+    .stChatInputContainer button:hover {
+        background: #334155 !important;
+    }
     /* Subtle success/error styling */
     .stSuccess { background-color: #f0fdf4 !important; border-radius: 8px; }
     .stError { background-color: #fef2f2 !important; border-radius: 8px; }
