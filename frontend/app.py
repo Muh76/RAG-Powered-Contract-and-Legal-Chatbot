@@ -43,8 +43,8 @@ st.markdown("""
     [data-testid="stSidebar"] [data-testid="stAlert"] { border-radius: 6px; }
     [data-testid="stSidebar"] .stCaptionContainer { color: #94a3b8 !important; }
     [data-testid="stSidebar"] .stMarkdown strong { color: #f1f5f9 !important; }
-    /* Section dividers */
-    hr { margin: 1.5rem 0 !important; border-color: #e2e8f0 !important; }
+    /* Section dividers — subtle, not harsh */
+    hr { margin: 1.5rem 0 !important; border-color: #e2e8f0 !important; opacity: 0.8; }
     /* Chat message bubbles: spacing, borders, role distinction */
     [data-testid="stChatMessage"] {
         padding: 1rem 1.25rem !important;
@@ -69,27 +69,6 @@ st.markdown("""
     /* Citation text snippet: monospace, smaller */
     [data-testid="stChatMessage"] [data-testid="stExpander"] pre,
     [data-testid="stChatMessage"] [data-testid="stExpander"] code { font-size: 0.8rem !important; font-family: ui-monospace, monospace !important; }
-    /* Chat input: prominent, clear primary action */
-    [data-testid="stChatInput"],
-    .stChatInputContainer > div {
-        padding: 0.9rem 1rem !important;
-        border-radius: 12px !important;
-        border: 1.5px solid #e2e8f0 !important;
-        background: #ffffff !important;
-        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06) !important;
-        transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
-    }
-    [data-testid="stChatInput"]:hover,
-    .stChatInputContainer:hover > div {
-        border-color: #94a3b8 !important;
-        box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08) !important;
-    }
-    [data-testid="stChatInput"]:focus-within,
-    .stChatInputContainer:focus-within > div {
-        border-color: #1e293b !important;
-        box-shadow: 0 0 0 3px rgba(30, 41, 59, 0.12) !important;
-        outline: none !important;
-    }
     /* Send button / primary action */
     [data-testid="stChatInput"] button,
     .stChatInputContainer button {
@@ -125,10 +104,39 @@ st.markdown("""
     .source-title { font-weight: 600; color: #1e293b; font-size: 0.95rem; }
     .source-meta { color: #64748b; font-size: 0.85rem; margin-top: 0.25rem; }
     .source-snippet-label { font-size: 0.8rem; color: #64748b; margin-top: 0.5rem; }
-    /* Chat hero: high contrast, WCAG-friendly, clear hierarchy */
-    .chat-hero { margin-bottom: 2rem; padding-bottom: 1.5rem; }
-    .chat-hero-title { font-size: 2.25rem !important; font-weight: 700 !important; color: #0f172a !important; letter-spacing: -0.02em !important; line-height: 1.2 !important; margin-bottom: 0.5rem !important; }
-    .chat-hero-subtitle { font-size: 1rem !important; color: #475569 !important; line-height: 1.5 !important; max-width: 36em; }
+    /* Chat hero: demo-ready, high contrast, centered */
+    .chat-hero { margin-bottom: 1.75rem; padding-bottom: 1.25rem; text-align: center; }
+    .chat-hero-title { font-size: 2.5rem !important; font-weight: 700 !important; color: #0f172a !important; letter-spacing: -0.03em !important; line-height: 1.15 !important; margin-bottom: 0.5rem !important; }
+    .chat-hero-subtitle { font-size: 1.1rem !important; color: #334155 !important; line-height: 1.5 !important; max-width: 42em; margin: 0 auto 1rem auto !important; font-weight: 500 !important; }
+    .chat-hero-features { font-size: 0.9rem !important; color: #475569 !important; line-height: 1.7 !important; margin: 0 auto !important; max-width: 32em; text-align: left; display: inline-block; }
+    .chat-hero-features li { margin-bottom: 0.25rem; }
+    /* Typography: consistent hierarchy, WCAG-friendly */
+    p { line-height: 1.6 !important; }
+    /* Sidebar: softer dark, reduced noise, intentional spacing */
+    [data-testid="stSidebar"] { background: linear-gradient(180deg, #1e293b 0%, #2d3a4f 50%, #334155 100%); }
+    [data-testid="stSidebar"] > div { max-height: 100vh; overflow-y: auto; padding: 0 1rem 1.25rem 1rem !important; }
+    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div { margin-bottom: 0.4rem !important; }
+    [data-testid="stSidebar"] hr { margin: 1rem 0 !important; opacity: 0.6; }
+    /* Chat input: primary CTA, focal point, subtle glow */
+    [data-testid="stChatInput"],
+    .stChatInputContainer > div {
+        padding: 1rem 1.2rem !important;
+        border-radius: 14px !important;
+        border: 2px solid #cbd5e1 !important;
+        background: #ffffff !important;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(30, 41, 59, 0.04) !important;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+    }
+    [data-testid="stChatInput"]:hover,
+    .stChatInputContainer:hover > div {
+        border-color: #94a3b8 !important;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.1), 0 0 0 1px rgba(30, 41, 59, 0.06) !important;
+    }
+    [data-testid="stChatInput"]:focus-within,
+    .stChatInputContainer:focus-within > div {
+        border-color: #1e293b !important;
+        box-shadow: 0 0 0 4px rgba(30, 41, 59, 0.15) !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -478,13 +486,18 @@ class LegalChatbotUI:
         st.markdown("""
         <div class="chat-hero">
             <h1 class="chat-hero-title">Legal Chatbot</h1>
-            <p class="chat-hero-subtitle">Ask questions about UK law. Every answer is grounded in legislation and cited to source documents.</p>
+            <p class="chat-hero-subtitle">AI-powered legal assistant for UK law with verified citations.</p>
+            <ul class="chat-hero-features">
+                <li>Retrieval-Augmented Generation (RAG)</li>
+                <li>Source-backed legal answers</li>
+                <li>Role-based access (Public / Solicitor / Admin)</li>
+            </ul>
         </div>
         """, unsafe_allow_html=True)
         
         # Empty state: clean, screenshot-ready
         if not self.session_state.messages:
-            st.markdown("<div style='margin-top: 0.5rem; margin-bottom: 1.5rem;'></div>", unsafe_allow_html=True)
+            st.markdown("<div style='margin-top: 0.75rem; margin-bottom: 1.25rem;'></div>", unsafe_allow_html=True)
             st.caption("Answers are grounded in UK legislation. Type a question below to begin.")
         
         # Display chat messages
@@ -501,7 +514,7 @@ class LegalChatbotUI:
                     self.display_response_metadata(message["metadata"])
         
         # Chat input
-        if prompt := st.chat_input("Ask a legal question..."):
+        if prompt := st.chat_input("Ask about UK consumer rights…"):
             # Add user message
             self.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
