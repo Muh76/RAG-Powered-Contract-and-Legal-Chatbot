@@ -140,7 +140,7 @@ def create_access_token(
     
     encoded_jwt = jwt.encode(
         payload,
-        settings.JWT_SECRET_KEY,
+        settings.get_jwt_secret(),
         algorithm=settings.JWT_ALGORITHM
     )
     
@@ -166,7 +166,7 @@ def create_refresh_token(
     
     encoded_jwt = jwt.encode(
         payload,
-        settings.JWT_SECRET_KEY,
+        settings.get_jwt_secret(),
         algorithm=settings.JWT_ALGORITHM
     )
     
@@ -178,7 +178,7 @@ def verify_token(token: str, token_type: str = "access") -> TokenData:
     try:
         payload = jwt.decode(
             token,
-            settings.JWT_SECRET_KEY,
+            settings.get_jwt_secret(),
             algorithms=[settings.JWT_ALGORITHM]
         )
         
@@ -223,7 +223,7 @@ def decode_token(token: str) -> dict:
     try:
         return jwt.decode(
             token,
-            settings.JWT_SECRET_KEY,
+            settings.get_jwt_secret(),
             algorithms=[settings.JWT_ALGORITHM],
             options={"verify_signature": False}
         )

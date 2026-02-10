@@ -13,9 +13,14 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 import os
-os.environ['DATABASE_URL'] = 'postgresql://javadbeni@localhost:5432/legal_chatbot'
-os.environ['JWT_SECRET_KEY'] = 'test-jwt-secret-key-for-testing'
-os.environ['SECRET_KEY'] = 'test-secret-key-for-testing'
+# Require env for secrets; no hardcoded credentials
+if not os.environ.get("DATABASE_URL"):
+    print("Set DATABASE_URL (e.g. export DATABASE_URL='postgresql://user:pass@localhost:5432/dbname')")
+    sys.exit(1)
+if not os.environ.get("JWT_SECRET_KEY") and not os.environ.get("JWT_SECRET"):
+    os.environ["JWT_SECRET_KEY"] = "test-jwt-secret-key-for-testing-only"
+if not os.environ.get("SECRET_KEY"):
+    os.environ["SECRET_KEY"] = "test-secret-key-for-testing-only"
 
 print("=" * 60)
 print("AUTHENTICATION API TEST (Auth Endpoints Only)")

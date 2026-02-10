@@ -9,7 +9,7 @@ import os
 from contextlib import asynccontextmanager
 import logging
 
-from app.core.config import settings, _validate_embedding_config
+from app.core.config import settings, _validate_embedding_config, validate_required_config
 from app.api.routes import chat, health, documents
 from app.core.logging import setup_logging
 
@@ -19,8 +19,9 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
-    # Startup
+    # Startup: fail fast if required env (DATABASE_URL, JWT_SECRET_KEY/JWT_SECRET) are missing
     setup_logging()
+    validate_required_config()
     _validate_embedding_config()
     from app.api.routes import chat as chat_routes
     chat_routes.init_chat_services()

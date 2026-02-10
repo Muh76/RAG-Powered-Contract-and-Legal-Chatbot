@@ -32,17 +32,15 @@ import secrets
 if not settings.DATABASE_URL:
     print("❌ DATABASE_URL environment variable is not set.")
     print("Please set it before running this script, e.g.:")
-    print("export DATABASE_URL='postgresql://postgres:password@localhost:5432/legal_chatbot'")
+    print("export DATABASE_URL='postgresql://user:pass@host:5432/dbname'")
     sys.exit(1)
 
-# Ensure JWT_SECRET_KEY is set
-if not settings.JWT_SECRET_KEY or settings.JWT_SECRET_KEY == "your-jwt-secret-key-change-in-production":
-    print("⚠️  JWT_SECRET_KEY is not set or is default. Generating a temporary one for testing.")
+# Ensure JWT_SECRET_KEY is set for test run (no dummy in config)
+if not settings.JWT_SECRET_KEY and not os.environ.get("JWT_SECRET"):
+    print("⚠️  JWT_SECRET_KEY not set. Using a temporary value for this test run.")
     settings.JWT_SECRET_KEY = secrets.token_urlsafe(32)
-
-# Ensure SECRET_KEY is set
-if not settings.SECRET_KEY or settings.SECRET_KEY == "your-secret-key-change-in-production":
-    print("⚠️  SECRET_KEY is not set or is default. Generating a temporary one for testing.")
+if not settings.SECRET_KEY:
+    print("⚠️  SECRET_KEY not set. Using a temporary value for this test run.")
     settings.SECRET_KEY = secrets.token_urlsafe(32)
 
 

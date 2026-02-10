@@ -126,10 +126,10 @@ class HealthChecker:
                 return cached_result
         
         try:
-            if not REDIS_AVAILABLE:
+            if not REDIS_AVAILABLE or not (settings.REDIS_URL or "").strip():
                 result = {
                     "status": "unknown",
-                    "message": "redis not available",
+                    "message": "redis not available (REDIS_URL not set)",
                     "response_time_ms": 0,
                 }
             else:

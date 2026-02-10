@@ -9,9 +9,13 @@ import sys
 from pathlib import Path
 
 # Set environment variables
-os.environ['DATABASE_URL'] = os.getenv('DATABASE_URL', 'postgresql://postgres:password@localhost:5432/legal_chatbot')
-os.environ['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'test-secret-key-for-testing')
-os.environ['SECRET_KEY'] = os.getenv('SECRET_KEY', 'test-secret-key')
+if not os.environ.get('DATABASE_URL'):
+    print("Set DATABASE_URL environment variable to run tests.")
+    sys.exit(1)
+if not os.environ.get('JWT_SECRET_KEY') and not os.environ.get('JWT_SECRET'):
+    os.environ['JWT_SECRET_KEY'] = 'test-secret-key-for-testing-only'
+if not os.environ.get('SECRET_KEY'):
+    os.environ['SECRET_KEY'] = 'test-secret-key-for-testing-only'
 
 print('='*60)
 print('AUTHENTICATION DATABASE TEST')

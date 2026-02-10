@@ -26,9 +26,9 @@ class Settings(BaseSettings):
     API_WORKERS: int = 1
     API_RELOAD: bool = True
     
-    # Database Configuration
-    DATABASE_URL: str = "postgresql://postgres:password@localhost:5432/legal_chatbot"
-    REDIS_URL: str = "redis://localhost:6379/0"
+    # Database Configuration (required in production; set via env, no defaults with credentials)
+    DATABASE_URL: Optional[str] = None
+    REDIS_URL: Optional[str] = None
     
     # Vector Database
     VECTOR_DB_URL: str = "http://localhost:6333"
@@ -67,9 +67,9 @@ class Settings(BaseSettings):
     HYBRID_SEARCH_TOP_K_FINAL: int = 15  # Increased from 10 - return more results for better coverage
     HYBRID_SEARCH_RRF_K: int = 60  # RRF parameter (standard value)
     
-    # Security Configuration
-    SECRET_KEY: str = "your-secret-key-change-in-production"
-    JWT_SECRET_KEY: str = "your-jwt-secret-key-change-in-production"
+    # Security Configuration (required for auth; set via env. JWT_SECRET or JWT_SECRET_KEY.)
+    SECRET_KEY: Optional[str] = None
+    JWT_SECRET_KEY: Optional[str] = None
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -120,9 +120,35 @@ class Settings(BaseSettings):
         env_file = ".env"
         case_sensitive = True
 
+    def get_jwt_secret(self) -> str:
+        """JWT secret from JWT_SECRET_KEY or JWT_SECRET env. Raises if missing."""
+        secret = self.JWT_SECRET_KEY or os.environ.get("JWT_SECRET")
+        if not secret or not secret.strip():
+            raise RuntimeError(
+                "JWT_SECRET_KEY or JWT_SECRET environment variable is required for authentication. "
+                "Set one of them (e.g. export JWT_SECRET_KEY='your-secret')."
+            )
+        return secret.strip()
+
 
 # Create settings instance
 settings = Settings()
+
+
+def validate_required_config() -> None:
+    """Fail fast with clear errors if required secrets/config are missing. No dummy values."""
+    missing: List[str] = []
+    if not settings.DATABASE_URL or not settings.DATABASE_URL.strip():
+        missing.append("DATABASE_URL (PostgreSQL connection string)")
+    try:
+        settings.get_jwt_secret()
+    except RuntimeError:
+        missing.append("JWT_SECRET_KEY or JWT_SECRET (for JWT signing)")
+    if missing:
+        raise RuntimeError(
+            "Missing required environment variables: " + ", ".join(missing) + ". "
+            "Set them in .env or the environment before starting the application."
+        )
 
 
 def _validate_embedding_config() -> None:
