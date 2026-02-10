@@ -28,6 +28,9 @@ RUN pip install --no-cache-dir --upgrade pip \
 # Layer 2: application code (changes often)
 COPY . .
 
+# Production entrypoint: single process, bind 0.0.0.0:$PORT, low cold start
+RUN chmod +x /app/scripts/entrypoint.sh
+
 # Non-root user for runtime
 RUN groupadd --gid 1000 app \
     && useradd --uid 1000 --gid app --shell /bin/bash --create-home app \
@@ -41,5 +44,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://127.0.0.1:8080/health || exit 1
 
-# FastAPI default; for Streamlit: CMD ["streamlit", "run", "frontend/app.py", "--server.port=8080", "--server.address=0.0.0.0"]
-CMD ["sh", "-c", "exec uvicorn app.api.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+ENTRYPOINT ["/app/scripts/entrypoint.sh"]
+# For Streamlit-only deploy: override with CMD ["streamlit", "run", "frontend/app.py", "--server.port=8080", "--server.address=0.0.0.0"]
