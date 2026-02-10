@@ -1,43 +1,45 @@
-# Legal Chatbot Dockerfile
+# Production Dockerfile for Google Cloud Run (FastAPI default; override CMD for Streamlit)
+# Build context must exclude secrets (e.g. .dockerignore with .env, *.pem).
 
 FROM python:3.11-slim
 
-# Set working directory
-WORKDIR /app
-
-# Set environment variables
+# Prevent Python from writing bytecode and buffer stdout/stderr
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# Cloud Run sets PORT (default 8080)
+ENV PORT=8080
+
+WORKDIR /app
+
+# System deps only (no dev packages); clean apt cache in same layer
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
-    g++ \
     libpq-dev \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
-COPY requirements.txt requirements-dev.txt ./
+# Layer 1: install dependencies for better cache reuse
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
+# Layer 2: application code (changes often)
 COPY . .
 
-# Create logs directory
-RUN mkdir -p logs
+# Non-root user for runtime
+RUN groupadd --gid 1000 app \
+    && useradd --uid 1000 --gid app --shell /bin/bash --create-home app \
+    && mkdir -p /app/logs \
+    && chown -R app:app /app
 
-# Cloud Run sets PORT (default 8080); listen on 0.0.0.0
-ENV PORT=8080
+USER app
+
 EXPOSE 8080
 
-# Health check (Cloud Run uses GET /health for liveness)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://127.0.0.1:8080/health || exit 1
 
-# No hardcoded port: use PORT from environment (Cloud Run)
+# FastAPI default; for Streamlit: CMD ["streamlit", "run", "frontend/app.py", "--server.port=8080", "--server.address=0.0.0.0"]
 CMD ["sh", "-c", "exec uvicorn app.api.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
