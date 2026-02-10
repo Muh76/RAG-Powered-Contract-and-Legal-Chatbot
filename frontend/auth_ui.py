@@ -5,14 +5,20 @@ Streamlit authentication UI components for login, registration, and OAuth.
 
 import streamlit as st
 import requests
+import os
 from typing import Optional, Dict, Any, Tuple
 from datetime import datetime, timedelta
 import time
 
 
+def _frontend_public_url() -> str:
+    """Public URL of this frontend (for OAuth redirect). Set FRONTEND_PUBLIC_URL in production."""
+    return os.environ.get("FRONTEND_PUBLIC_URL", "http://localhost:8501").rstrip("/")
+
+
 class AuthUI:
     """Authentication UI components for Streamlit"""
-    
+
     def __init__(self, api_base_url: str = "http://localhost:8000"):
         self.api_base_url = api_base_url
         self.session_state = st.session_state
@@ -197,7 +203,7 @@ class AuthUI:
         except requests.exceptions.Timeout:
             return False, "Connection timeout: Server took too long to respond"
         except requests.exceptions.ConnectionError:
-            return False, "Connection error: Could not connect to server. Make sure the backend is running on http://localhost:8000"
+            return False, f"Connection error: Could not connect to server. Make sure the backend is running at {self.api_base_url}"
         except requests.exceptions.RequestException as e:
             return False, f"Connection error: {str(e)}"
         except Exception as e:
@@ -349,9 +355,10 @@ class AuthUI:
         """Initiate OAuth flow"""
         try:
             # Get OAuth authorization URL
+            redirect_uri = f"{_frontend_public_url()}/auth/callback"
             response = requests.get(
                 f"{self.api_base_url}/api/v1/auth/oauth/{provider}/authorize",
-                params={"redirect_uri": "http://localhost:8501"},
+                params={"redirect_uri": redirect_uri},
                 timeout=10,
                 allow_redirects=False  # Don't follow redirects
             )
@@ -447,14 +454,15 @@ class AuthUI:
         try:
             # OAuth callback endpoint is POST
             # Provider is in path, but OAuthLoginRequest schema also requires provider in body
+            redirect_uri = f"{_frontend_public_url()}/auth/callback"
             response = requests.post(
                 f"{self.api_base_url}/api/v1/auth/oauth/{provider}/callback",
                 json={
-                    "provider": provider,  # Required by OAuthLoginRequest schema
+                    "provider": provider,
                     "code": code,
-                    "redirect_uri": "http://localhost:8501"
+                    "redirect_uri": redirect_uri,
                 },
-                timeout=10
+                timeout=10,
             )
             
             if response.status_code == 200:

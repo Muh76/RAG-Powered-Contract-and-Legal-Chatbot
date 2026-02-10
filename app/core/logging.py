@@ -70,54 +70,43 @@ def serialize_log(record: Dict[str, Any]) -> str:
 
 
 def setup_logging():
-    """Setup application logging with structured JSON format"""
-    # Remove default logger
+    """Setup application logging. Production-safe: stdout always used; file optional."""
     logger.remove()
-    
-    # Ensure logs directory exists
-    log_file_path = Path(settings.LOG_FILE)
-    log_file_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    # Determine log format based on settings
     use_json = settings.LOG_FORMAT.lower() == "json"
-    
-    if use_json:
-        # JSON format for file logging (machine-readable)
+    is_production = (settings.ENVIRONMENT or "development").lower() == "production"
+
+    # Console: always add. In production prefer JSON for Cloud Run / log aggregation.
+    if use_json or is_production:
         logger.add(
-            settings.LOG_FILE,
+            sys.stdout,
             level=settings.LOG_LEVEL,
             format=serialize_log,
-            rotation="10 MB",
-            retention="7 days",
-            compression="zip",
-            enqueue=True,  # Thread-safe
-        )
-        
-        # Human-readable format for console (development)
-        logger.add(
-            sys.stdout,
-            level=settings.LOG_LEVEL,
-            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-            colorize=True,
         )
     else:
-        # Standard format for both console and file
         logger.add(
             sys.stdout,
             level=settings.LOG_LEVEL,
             format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
             colorize=True,
         )
-        
-        logger.add(
-            settings.LOG_FILE,
-            level=settings.LOG_LEVEL,
-            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
-            rotation="10 MB",
-            retention="7 days",
-            compression="zip",
-            enqueue=True,
-        )
+
+    # File: only when not production and log directory is writable (avoid read-only filesystem)
+    if not is_production:
+        try:
+            log_file_path = Path(settings.LOG_FILE)
+            log_file_path.parent.mkdir(parents=True, exist_ok=True)
+            fmt = serialize_log if use_json else "{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}"
+            logger.add(
+                settings.LOG_FILE,
+                level=settings.LOG_LEVEL,
+                format=fmt,
+                rotation="10 MB",
+                retention="7 days",
+                compression="zip",
+                enqueue=True,
+            )
+        except OSError:
+            pass  # Log directory not writable (e.g. Cloud Run); stdout only
     
     # Replace standard logging
     logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)

@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     
     # API Configuration
     API_HOST: str = "0.0.0.0"
-    API_PORT: int = 8000
+    API_PORT: int = 8000  # Used when PORT env is not set (e.g. local dev)
     API_WORKERS: int = 1
     API_RELOAD: bool = True
     

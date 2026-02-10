@@ -87,16 +87,17 @@ async def root():
 
 
 @app.get("/health")
-async def health_redirect():
-    """Redirect /health to /api/v1/health. Clients that request /health get the canonical health JSON."""
-    return RedirectResponse(url="/api/v1/health", status_code=307)
+async def health_root():
+    """Cloud Run / liveness: return 200 OK. Use /api/v1/health for detailed status."""
+    return {"status": "ok"}
 
 
 if __name__ == "__main__":
+    port = int(os.environ.get("PORT", settings.API_PORT))
     uvicorn.run(
-        "main:app",
+        "app.api.main:app",
         host=settings.API_HOST,
-        port=settings.API_PORT,
+        port=port,
         reload=settings.API_RELOAD,
-        workers=settings.API_WORKERS
+        workers=settings.API_WORKERS,
     )
