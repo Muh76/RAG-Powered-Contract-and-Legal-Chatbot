@@ -7,6 +7,7 @@ from typing import Dict, Any
 from app.models.schemas import HealthResponse
 from app.core.health_checker import health_checker
 from app.core.metrics import SystemMetrics
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -75,18 +76,15 @@ async def liveness_probe():
 
 @router.get("/health/ready")
 async def readiness_probe():
-    """Kubernetes readiness probe - only requires database (FAISS is in-memory)"""
+    """Kubernetes readiness probe - requires database unless DEMO_MODE (FAISS is in-memory)"""
+    if getattr(settings, "DEMO_MODE", False):
+        return {"status": "ready", "timestamp": datetime.utcnow().isoformat()}
     dependencies = await health_checker.check_all_dependencies()
-    
-    # Check if critical services are ready
-    # Only database is critical - FAISS is in-memory and loads on-demand
     critical_services = ["database"]
     ready = all(
         dependencies[service].get("status") == "healthy"
         for service in critical_services
     )
-    
     if ready:
         return {"status": "ready", "timestamp": datetime.utcnow().isoformat()}
-    else:
-        raise HTTPException(status_code=503, detail="Service not ready")
+    raise HTTPException(status_code=503, detail="Service not ready")

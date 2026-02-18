@@ -17,6 +17,7 @@ from app.auth.dependencies import (
 )
 from app.auth.models import User, UserRole
 from app.core.database import get_db
+from app.core.config import settings
 from app.core.errors import AuthenticationError, NotFoundError
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -177,7 +178,7 @@ async def change_password(
     return {"message": "Password changed successfully"}
 
 
-# OAuth Routes
+# OAuth Routes (disabled in DEMO_MODE)
 @router.get("/oauth/{provider}/authorize", response_model=OAuthAuthorizationURL)
 async def oauth_authorize(
     provider: OAuthProvider,
@@ -185,6 +186,11 @@ async def oauth_authorize(
     state: Optional[str] = Query(None, description="State parameter for CSRF protection")
 ):
     """Get OAuth authorization URL"""
+    if getattr(settings, "DEMO_MODE", False):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="OAuth is disabled in DEMO_MODE",
+        )
     try:
         auth_url, state_value = AuthService.get_oauth_authorization_url(
             provider, redirect_uri, state
@@ -201,6 +207,11 @@ async def oauth_callback(
     db: Session = Depends(get_db)
 ):
     """OAuth callback endpoint"""
+    if getattr(settings, "DEMO_MODE", False):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="OAuth is disabled in DEMO_MODE",
+        )
     try:
         tokens = AuthService.oauth_login(db, provider, request.code, request.redirect_uri or "")
         return tokens

@@ -115,7 +115,10 @@ class Settings(BaseSettings):
     # Development Configuration
     DEBUG: bool = True
     ENVIRONMENT: str = "development"
-    
+
+    # Demo / Cloud Run demo deployment: skip JWT and DB for auth; return mock public user
+    DEMO_MODE: bool = False
+
     class Config:
         env_file = ".env"
         case_sensitive = True
@@ -137,6 +140,8 @@ settings = Settings()
 
 def validate_required_config() -> None:
     """Fail fast with clear errors if required secrets/config are missing. No dummy values."""
+    if getattr(settings, "DEMO_MODE", False):
+        return  # DEMO_MODE: no DATABASE_URL or JWT required
     missing: List[str] = []
     if not settings.DATABASE_URL or not settings.DATABASE_URL.strip():
         missing.append("DATABASE_URL (PostgreSQL connection string)")

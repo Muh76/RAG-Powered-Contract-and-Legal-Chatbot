@@ -7,7 +7,8 @@ from sqlalchemy.pool import StaticPool
 from typing import Generator, Optional, Any
 from app.core.config import settings
 
-# Create engine only when DATABASE_URL is set (no hardcoded credentials)
+# Create engine only when DATABASE_URL is set (no hardcoded credentials).
+# In DEMO_MODE with no DATABASE_URL, engine is left None; get_db() yields a dummy session.
 _db_url = (settings.DATABASE_URL or "").strip()
 engine: Optional[Engine] = None
 SessionLocal: Any = None
@@ -25,8 +26,18 @@ _ERR_DB = "DATABASE_URL environment variable is required. Set it to your Postgre
 
 
 def get_db() -> Generator[Session, None, None]:
-    """Database dependency for FastAPI. Fails fast if DATABASE_URL is not set."""
+    """Database dependency for FastAPI. Fails fast if DATABASE_URL is not set (unless DEMO_MODE)."""
     if SessionLocal is None:
+        if getattr(settings, "DEMO_MODE", False):
+            # DEMO_MODE: no DB required; yield a dummy session so dependencies resolve without error
+            _dummy = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+            _Session = sessionmaker(autocommit=False, autoflush=False, bind=_dummy)
+            session = _Session()
+            try:
+                yield session
+            finally:
+                session.close()
+            return
         raise RuntimeError(_ERR_DB)
     db = SessionLocal()
     try:

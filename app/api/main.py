@@ -19,15 +19,18 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
-    # Startup: fail fast if required env (DATABASE_URL, JWT_SECRET_KEY/JWT_SECRET) are missing
     setup_logging()
-    validate_required_config()
+    if getattr(settings, "DEMO_MODE", False):
+        logger.info("Running in DEMO_MODE - database disabled")
+        # DEMO_MODE: skip DB/JWT validation; RAG and Guardrails still load
+    else:
+        validate_required_config()
     _validate_embedding_config()
     from app.api.routes import chat as chat_routes
     chat_routes.init_chat_services()
     logger.info("✅ Application startup complete (RAG and Guardrails initialized)")
     yield
-    
+
     # Shutdown
     logger.info("Shutting down...")
     pass

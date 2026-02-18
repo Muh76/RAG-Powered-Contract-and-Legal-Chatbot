@@ -10,6 +10,7 @@ from app.auth.schemas import UserRole, TokenData
 from app.auth.models import User
 from app.core.errors import AuthenticationError, AuthorizationError
 from app.core.database import get_db
+from app.core.config import settings
 
 # HTTP Bearer token security
 # auto_error=True means 403 is raised when no token provided (FastAPI default)
@@ -17,13 +18,31 @@ from app.core.database import get_db
 security = HTTPBearer()
 
 
+def _get_demo_user() -> User:
+    """Mock public user for DEMO_MODE; no JWT or DB required."""
+    u = User()
+    u.id = 0
+    u.email = "demo@legalchatbot.ai"
+    u.role = UserRole.PUBLIC
+    u.is_active = True
+    u.username = None
+    u.hashed_password = None
+    u.full_name = "Demo User"
+    u.is_verified = False
+    u.avatar_url = None
+    return u
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ) -> User:
-    """Get current authenticated user from JWT token"""
+    """Get current authenticated user from JWT token. In DEMO_MODE, skip validation and return mock public user."""
+    if getattr(settings, "DEMO_MODE", False):
+        return _get_demo_user()
+
     token = credentials.credentials
-    
+
     try:
         token_data = verify_token(token, token_type="access")
     except AuthenticationError as e:
@@ -32,23 +51,23 @@ async def get_current_user(
             detail=str(e),
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     # Get user from database
     user = db.query(User).filter(User.id == token_data.user_id).first()
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is inactive"
         )
-    
+
     return user
 
 
@@ -101,10 +120,11 @@ async def get_optional_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
     db: Session = Depends(get_db)
 ) -> Optional[User]:
-    """Get current user if authenticated, None otherwise"""
+    """Get current user if authenticated, None otherwise. In DEMO_MODE with credentials, return demo user."""
     if not credentials:
         return None
-    
+    if getattr(settings, "DEMO_MODE", False):
+        return _get_demo_user()
     try:
         token_data = verify_token(credentials.credentials, token_type="access")
         user = db.query(User).filter(User.id == token_data.user_id).first()

@@ -9,6 +9,8 @@ from datetime import datetime
 from loguru import logger
 import asyncio
 
+from app.core.config import settings
+
 try:
     import psycopg2
     PSYCOPG2_AVAILABLE = True
@@ -65,13 +67,19 @@ class HealthChecker:
         return f"Database connection failed: {e}"
 
     async def check_database(self) -> Dict[str, Any]:
-        """Check PostgreSQL database health via connect + SELECT 1."""
+        """Check PostgreSQL database health via connect + SELECT 1. Skipped in DEMO_MODE."""
+        if getattr(settings, "DEMO_MODE", False):
+            return {
+                "status": "unknown",
+                "message": "database disabled in DEMO_MODE",
+                "response_time_ms": 0,
+            }
         cache_key = "database"
         if cache_key in self._cache:
             cached_time, cached_result = self._cache[cache_key]
             if (time.time() - cached_time) < self._cache_ttl:
                 return cached_result
-        
+
         try:
             if not PSYCOPG2_AVAILABLE:
                 result = {
