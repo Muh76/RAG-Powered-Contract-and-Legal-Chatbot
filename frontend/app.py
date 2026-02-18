@@ -156,14 +156,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-def _api_base_url() -> str:
-    """Backend API URL from env (Cloud Run / production); no hardcoded localhost."""
-    return os.environ.get("API_BASE_URL", "http://localhost:8000").rstrip("/")
+def _backend_url() -> str:
+    """Backend API base URL from BACKEND_URL env; default localhost for local dev."""
+    return os.environ.get("BACKEND_URL", "http://localhost:8000").rstrip("/")
 
 
 class LegalChatbotUI:
     def __init__(self):
-        self.api_base_url = _api_base_url()
+        self.api_base_url = _backend_url()
         self.session_state = st.session_state
         self.auth_ui = AuthUI(api_base_url=self.api_base_url)
         

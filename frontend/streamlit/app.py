@@ -1,5 +1,6 @@
 # Legal Chatbot - Streamlit Frontend
 
+import os
 import streamlit as st
 import requests
 import json
@@ -58,8 +59,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# API Configuration
-API_BASE_URL = "http://localhost:8000/api/v1"
+# API Configuration: BACKEND_URL for Cloud Run; default localhost for local dev
+_backend = os.environ.get("BACKEND_URL", "http://localhost:8000").rstrip("/")
+API_BASE_URL = f"{_backend}/api/v1"
 
 
 def initialize_session_state():

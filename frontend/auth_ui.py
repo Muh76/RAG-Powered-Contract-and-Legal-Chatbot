@@ -19,8 +19,8 @@ def _frontend_public_url() -> str:
 class AuthUI:
     """Authentication UI components for Streamlit"""
 
-    def __init__(self, api_base_url: str = "http://localhost:8000"):
-        self.api_base_url = api_base_url
+    def __init__(self, api_base_url: Optional[str] = None):
+        self.api_base_url = (api_base_url or os.environ.get("BACKEND_URL", "http://localhost:8000")).rstrip("/")
         self.session_state = st.session_state
         
         # Initialize session state
