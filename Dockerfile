@@ -1,48 +1,30 @@
-# Production Dockerfile for Google Cloud Run (FastAPI default; override CMD for Streamlit)
-# Build context must exclude secrets (e.g. .dockerignore with .env, *.pem).
+# Production Dockerfile for Google Cloud Run
+# Build context: ensure data/ (FAISS indices) is included; secrets via env (OPENAI_API_KEY, etc.)
 
 FROM python:3.11-slim
 
-# Prevent Python from writing bytecode and buffer stdout/stderr
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 
-# Cloud Run sets PORT (default 8080)
-ENV PORT=8080
-
 WORKDIR /app
 
-# System deps only (no dev packages); clean apt cache in same layer
+# System deps for psycopg2/pgvector; clean apt cache in same layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Layer 1: install dependencies for better cache reuse
+# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-# Layer 2: application code (changes often)
+# Copy entire project (app, data/, scripts, etc.); FAISS index in data/ is included
 COPY . .
-
-# Production entrypoint: single process, bind 0.0.0.0:$PORT, low cold start
-RUN chmod +x /app/scripts/entrypoint.sh
-
-# Non-root user for runtime
-RUN groupadd --gid 1000 app \
-    && useradd --uid 1000 --gid app --shell /bin/bash --create-home app \
-    && mkdir -p /app/logs \
-    && chown -R app:app /app
-
-USER app
 
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://127.0.0.1:8080/health || exit 1
-
-ENTRYPOINT ["/app/scripts/entrypoint.sh"]
-# For Streamlit-only deploy: override with CMD ["streamlit", "run", "frontend/app.py", "--server.port=8080", "--server.address=0.0.0.0"]
+# Cloud Run: OPENAI_API_KEY and other secrets from environment
+CMD ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8080"]
