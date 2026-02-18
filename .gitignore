@@ -139,3 +139,5 @@ data/uk_legislation/*
 !data/uk_legislation/consumer_rights_act.json
 *.pkl
 *.bin
+*.env
+*.env
