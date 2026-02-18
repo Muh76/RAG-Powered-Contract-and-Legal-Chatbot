@@ -1,5 +1,8 @@
 # Legal Chatbot - Main Application Entry Point
 
+import sys
+print("PYTHONPATH:", sys.path)
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
@@ -81,8 +84,9 @@ app.include_router(debug.router, prefix="/api/v1")
 
 @app.get("/")
 async def root():
-    """Root endpoint"""
+    """Root endpoint; includes status for simple health checks."""
     return {
+        "status": "running",
         "message": "Legal Chatbot API",
         "version": "1.0.0",
         "docs": "/docs",

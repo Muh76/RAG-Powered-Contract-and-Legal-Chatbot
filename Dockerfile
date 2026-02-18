@@ -26,5 +26,5 @@ COPY . .
 
 EXPOSE 8080
 
-# Cloud Run: listen on PORT (default 8080); OPENAI_API_KEY and other secrets from environment
-CMD ["sh", "-c", "uvicorn app.api.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+# Cloud Run: use port 8080 (set PORT=8080 in Cloud Run); OPENAI_API_KEY from environment
+CMD ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8080"]
