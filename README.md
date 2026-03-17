@@ -46,7 +46,7 @@ Document ingestion and indexing are handled offline via scripts using loaders an
 
 The diagram below represents the implemented architecture:
 
-```mermaid
+```text
 flowchart TD
     user(User) --> fe[Streamlit Frontend]
     fe --> api[FastAPI Backend]
