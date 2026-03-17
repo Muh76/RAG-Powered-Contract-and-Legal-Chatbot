@@ -1,42 +1,83 @@
 # Legal Chatbot - Main Application Entry Point
+# Emit immediately so Cloud Run logs show something even if we crash during import
+print("legal-chatbot-api: process starting", flush=True)
 
+import asyncio
+import logging
+import os
 import sys
-print("PYTHONPATH:", sys.path)
+from contextlib import asynccontextmanager
 
+import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-import uvicorn
-import os
-from contextlib import asynccontextmanager
-import logging
 
-from app.core.config import settings, _validate_embedding_config, validate_required_config
-from app.api.routes import chat, health, documents
+from app.api.routes import chat, documents, health
+from app.core.config import (
+    _validate_embedding_config,
+    settings,
+    validate_required_config,
+)
 from app.core.logging import setup_logging
 
 logger = logging.getLogger(__name__)
+print("legal-chatbot-api: imports done", flush=True)
+
+# Background init (run_in_executor): server binds to PORT immediately for Cloud Run
+_init_future: asyncio.Future | None = None
+
+
+def _is_demo_mode() -> bool:
+    """True if DEMO_MODE is set (env or settings). Cloud Run sets DEMO_MODE=true as string."""
+    if getattr(settings, "DEMO_MODE", False):
+        return True
+    return os.getenv("DEMO_MODE", "").strip().lower() in ("true", "1", "yes")
+
+
+def _run_startup_sync():
+    """Run in thread: logging, validation (if not DEMO), RAG/Guardrails init. Never blocks server bind."""
+    try:
+        setup_logging()
+    except Exception as e:
+        print(f"legal-chatbot-api: setup_logging failed: {e}", flush=True)
+    if _is_demo_mode():
+        try:
+            import logging as _log
+            _log.getLogger(__name__).info("Running in DEMO_MODE - database disabled")
+        except Exception:
+            pass
+    else:
+        try:
+            validate_required_config()
+            _validate_embedding_config()
+        except Exception as e:
+            print(f"legal-chatbot-api: config validation failed: {e}", flush=True)
+            raise
+    from app.api.routes import chat as chat_routes
+    try:
+        chat_routes.init_chat_services()
+        logger.info("✅ Background init complete (RAG and Guardrails initialized)")
+    except Exception as e:
+        logger.exception("❌ Background init failed: %s", e)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan events"""
-    setup_logging()
-    if getattr(settings, "DEMO_MODE", False):
-        logger.info("Running in DEMO_MODE - database disabled")
-        # DEMO_MODE: skip DB/JWT validation; RAG and Guardrails still load
-    else:
-        validate_required_config()
-    _validate_embedding_config()
-    from app.api.routes import chat as chat_routes
-    chat_routes.init_chat_services()
-    logger.info("✅ Application startup complete (RAG and Guardrails initialized)")
+    """Yield immediately so the server binds to PORT; all startup runs in a background thread."""
+    global _init_future
+    print("legal-chatbot-api: lifespan yielding so server can bind", flush=True)
+    loop = asyncio.get_event_loop()
+    _init_future = loop.run_in_executor(None, _run_startup_sync)
     yield
 
-    # Shutdown
+    if _init_future and not _init_future.done():
+        _init_future.cancel()
+        try:
+            await _init_future
+        except asyncio.CancelledError:
+            pass
     logger.info("Shutting down...")
-    pass
 
 
 # Create FastAPI application
@@ -48,6 +89,7 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan
 )
+print("legal-chatbot-api: FastAPI app created", flush=True)
 
 # Add middleware
 app.add_middleware(

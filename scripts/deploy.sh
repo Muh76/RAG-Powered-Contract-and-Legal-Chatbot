@@ -58,7 +58,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --region="$REGION" \
   --project="$PROJECT_ID" \
   --allow-unauthenticated \
-  --set-env-vars="PORT=8080,ENVIRONMENT=production,LOG_LEVEL=INFO,LOG_FORMAT=json" \
+  --set-env-vars="DEMO_MODE=true,ENVIRONMENT=production,LOG_LEVEL=INFO,LOG_FORMAT=json" \
   --memory=1Gi \
   --cpu=1 \
   --min-instances=0 \
@@ -66,7 +66,7 @@ gcloud run deploy "$SERVICE_NAME" \
 
 echo "=============================================="
 echo "Deployment complete."
-echo "Set required secrets in Cloud Run Console (Edit & deploy → Variables & Secrets):"
-echo "  DATABASE_URL, JWT_SECRET_KEY (or JWT_SECRET), OPENAI_API_KEY, REDIS_URL (optional)"
+echo "DEMO_MODE=true is set so the container starts without DB/JWT."
+echo "Optional: set OPENAI_API_KEY (and others) in Cloud Run → Variables & Secrets."
 echo "=============================================="
 gcloud run services describe "$SERVICE_NAME" --region="$REGION" --project="$PROJECT_ID" --format='value(status.url)'
