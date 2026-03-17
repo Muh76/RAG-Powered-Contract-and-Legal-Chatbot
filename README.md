@@ -44,48 +44,7 @@ Document ingestion and indexing are handled offline via scripts using loaders an
 
 ### Architecture Diagram
 
-The diagram below represents the implemented architecture:
-
-```text
-flowchart TD
-    user(User) --> fe[Streamlit Frontend]
-    fe --> api[FastAPI Backend]
-
-    subgraph RAG[RAG Pipeline]
-      direction TB
-      qp[Query Processing & Guardrails] --> emb[Embedding (OpenAI)]
-      emb --> hr[Hybrid Retrieval (BM25 + FAISS)]
-      hr --> rr[Reranking (optional)]
-      rr --> llm[LLM Generation & Citation Validation]
-    end
-
-    api --> qp
-    llm --> api
-
-    subgraph DOC[Document Processing & Indexing]
-      direction TB
-      load[Document Loaders] --> chunk[Chunking]
-      chunk --> demb[Embeddings (OpenAI)]
-      demb --> faiss[FAISS Index + Metadata]
-    end
-
-    subgraph SEC[Security & Guardrails]
-      direction TB
-      auth[JWT Auth + OAuth + RBAC] --> guards[Domain & Safety Guardrails]
-    end
-
-    subgraph MON[Evaluation & Monitoring]
-      direction TB
-      tests[Tests & Red-team] --> metrics[Metrics & Health Checks]
-    end
-
-    subgraph INFRA[Infrastructure]
-      direction TB
-      docker[Docker Container] --> run[Cloud Run-ready Deploy Script]
-    end
-```
-
-> Note: A rendered PNG diagram can be generated from this Mermaid spec and saved as `docs/architecture.png`. The README references this path for GitHub display.
+The diagram shows the main request flow (User → Frontend → Backend → RAG pipeline), the data layer (indexing feeds retrieval), and supporting systems. Source: `docs/architecture.mmd`.
 
 ![Architecture](docs/architecture.png)
 

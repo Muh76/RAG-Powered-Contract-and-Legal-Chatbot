@@ -1,36 +1,54 @@
 flowchart TD
-    user(User) --> fe[Streamlit Frontend]
-    fe --> api[FastAPI Backend]
-
-    subgraph RAG[RAG Pipeline]
-      direction TB
-      qp[Query Processing & Guardrails] --> emb[Embedding OpenAI]
-      emb --> hr[Hybrid Retrieval BM25 + FAISS]
-      hr --> rr[Reranking optional]
-      rr --> llm[LLM Generation & Citation Validation]
+    subgraph USER["User Layer"]
+      user(User)
     end
 
+    subgraph APP["Application Layer"]
+      fe[Streamlit Frontend]
+      api[FastAPI Backend]
+    end
+
+    subgraph RAG["RAG Core Pipeline"]
+      direction TB
+      qp[Query Processing & Guardrails]
+      emb[Query Embedding]
+      hr[Hybrid Retrieval]
+      rr[Reranking]
+      llm[LLM Generation & Citation Validation]
+      qp --> emb --> hr --> rr --> llm
+    end
+
+    subgraph DATA["Data Layer — Indexing & Storage"]
+      direction TB
+      load[Document Loaders]
+      chunk[Chunking]
+      demb[Embeddings]
+      faiss[FAISS Index]
+      bm25idx[BM25 Index]
+      load --> chunk
+      chunk --> demb --> faiss
+      chunk --> bm25idx
+    end
+
+    subgraph SUPPORT["Supporting Systems"]
+      auth[JWT + OAuth + RBAC]
+      guards[Domain & Safety Guardrails]
+      metrics[Metrics & Health Checks]
+      docker[Docker · Cloud Run]
+    end
+
+    user --> fe
+    fe --> api
     api --> qp
     llm --> api
 
-    subgraph DOC[Document Processing & Indexing]
-      direction TB
-      load[Document Loaders] --> chunk[Chunking]
-      chunk --> demb[Embeddings OpenAI]
-      demb --> faiss[FAISS Index + Metadata]
-    end
+    faiss -.->|"vector index"| hr
+    bm25idx -.->|"lexical index"| hr
 
-    subgraph SEC[Security & Guardrails]
-      direction TB
-      auth[JWT Auth + OAuth + RBAC] --> guards[Domain & Safety Guardrails]
-    end
+    auth --> api
+    guards --> qp
+    api --> metrics
+    docker --> api
 
-    subgraph MON[Evaluation & Monitoring]
-      direction TB
-      tests[Tests & Red-team] --> metrics[Metrics & Health Checks]
-    end
-
-    subgraph INFRA[Infrastructure]
-      direction TB
-      docker[Docker Container] --> run[Cloud Run-ready Deploy Script]
-    end
+    classDef main fill:#e1f5fe,stroke:#01579b
+    class qp,emb,hr,rr,llm main
