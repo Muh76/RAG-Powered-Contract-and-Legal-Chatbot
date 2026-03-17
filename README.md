@@ -49,14 +49,14 @@ The diagram below represents the implemented architecture:
 ```mermaid
 flowchart TD
     user(User) --> fe[Streamlit Frontend]
-    fe --> api[FastAPI Backend<br/>app/api/main.py]
+    fe --> api[FastAPI Backend]
 
     subgraph RAG[RAG Pipeline]
       direction TB
-      qp[Query Processing & Guardrails<br/>app/services/guardrails_service.py] --> emb[Embedding (OpenAI)<br/>retrieval/embeddings/openai_embedding_generator.py]
-      emb --> hr[Hybrid Retrieval<br/>BM25 + FAISS<br/>app/services/rag_service.py<br/>retrieval/hybrid_retriever.py]
-      hr --> rr[Reranking (optional)<br/>retrieval/rerankers/cross_encoder_reranker.py]
-      rr --> llm[LLM Generation + Citation Validation<br/>app/services/llm_service.py]
+      qp[Query Processing & Guardrails] --> emb[Embedding (OpenAI)]
+      emb --> hr[Hybrid Retrieval (BM25 + FAISS)]
+      hr --> rr[Reranking (optional)]
+      rr --> llm[LLM Generation & Citation Validation]
     end
 
     api --> qp
@@ -64,24 +64,24 @@ flowchart TD
 
     subgraph DOC[Document Processing & Indexing]
       direction TB
-      load[Loaders (PDF/TXT/JSON/CUAD)<br/>ingestion/loaders/document_loaders.py] --> chunk[Chunking<br/>ingestion/chunkers/document_chunker.py]
-      chunk --> demb[Embeddings (OpenAI)<br/>retrieval/embeddings/openai_embedding_generator.py]
-      demb --> faiss[FAISS Index + Metadata<br/>data/faiss_index.bin<br/>data/chunk_metadata.pkl]
+      load[Document Loaders] --> chunk[Chunking]
+      chunk --> demb[Embeddings (OpenAI)]
+      demb --> faiss[FAISS Index + Metadata]
     end
 
     subgraph SEC[Security & Guardrails]
       direction TB
-      auth[JWT Auth + OAuth + RBAC<br/>app/auth/*] --> guards[Domain & Safety Guardrails<br/>app/services/guardrails_service.py]
+      auth[JWT Auth + OAuth + RBAC] --> guards[Domain & Safety Guardrails]
     end
 
     subgraph MON[Evaluation & Monitoring]
       direction TB
-      tests[E2E & Red-team Tests<br/>tests/*, retrieval/red_team_tester.py] --> metrics[Metrics & Health Checks<br/>app/core/metrics.py<br/>app/core/health_checker.py]
+      tests[Tests & Red-team] --> metrics[Metrics & Health Checks]
     end
 
     subgraph INFRA[Infrastructure]
       direction TB
-      docker[Docker Container<br/>Dockerfile] --> run[Cloud Run-ready Deployment Script<br/>scripts/deploy.sh]
+      docker[Docker Container] --> run[Cloud Run-ready Deploy Script]
     end
 ```
 
@@ -541,17 +541,4 @@ Based on the current implementation, natural next steps include:
   - More advanced document management and analytics dashboards.
 
 ---
-
-## 13. Demo
-
-With the backend and Streamlit app running:
-
-- Open `http://localhost:8501` for the UI.
-- Ask a legal question about UK law (e.g., employment rights, sale of goods).
-- Inspect:
-  - Retrieved sources and their IDs.
-  - Citation tokens `[1]`, `[2]` at the end of each sentence in the answer.
-  - Safety messages when guardrails reject off-domain or harmful questions.
-
-This end-to-end flow exercises the ingestion, retrieval, LLM, guardrails, and monitoring components implemented in this repository.
 
